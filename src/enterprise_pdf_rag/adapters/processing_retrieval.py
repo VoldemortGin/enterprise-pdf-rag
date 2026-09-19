@@ -96,9 +96,10 @@ class ProcessingRetrieval:
             )
             lineage: tuple[AssetRef, ...] = ()
             if record.kind is ObjectKind.CHART:
-                raw_refs = tuple(
-                    stages.get(name) for name in ("ir", "description", "model_view")
-                )
+                lineage_stages: tuple[str, ...] = ("ir", "description", "model_view")
+                if "source_paint_proof" in stages:
+                    lineage_stages += ("source_paint_proof",)
+                raw_refs = tuple(stages.get(name) for name in lineage_stages)
                 if any(
                     stage is None
                     or stage.state is not StageState.SUCCEEDED
@@ -106,7 +107,7 @@ class ProcessingRetrieval:
                     for stage in raw_refs
                 ):
                     raise ValueError(
-                        "Qualified chart is missing its raw branch or view lineage"
+                        "Qualified chart is missing its raw branch, view or source proof lineage"
                     )
                 lineage = tuple(
                     stage.artifact

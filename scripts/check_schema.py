@@ -5,6 +5,11 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from enterprise_pdf_rag.adapters.http.chart_qa_schemas import (
+    ChartQueryErrorResponse,
+    ChartQueryRequest,
+    ChartQueryResponse,
+)
 from enterprise_pdf_rag.adapters.http.document_schemas import (
     DocumentSnapshotResponse,
     PageTextResponse,
@@ -49,6 +54,7 @@ MODELS: tuple[type[BaseModel], ...] = (
 
 
 CONTRACTS: dict[str, tuple[type[BaseModel], ...]] = {
+    "chart-qa-v1": (ChartQueryRequest, ChartQueryResponse, ChartQueryErrorResponse),
     "figure-api-v1": MODELS,
     "aia-source-review-v1": (
         SourceChatRequest,

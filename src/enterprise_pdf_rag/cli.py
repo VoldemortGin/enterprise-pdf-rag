@@ -8,7 +8,13 @@ import uvicorn
 from pydantic import BaseModel, ConfigDict, Field
 
 from enterprise_pdf_rag.adapters.aia_ingestion import AIA_OUTPUT, ingest_aia
+from enterprise_pdf_rag.adapters.chart_qa import StoredChartResolver
+from enterprise_pdf_rag.adapters.document_store import LocalDocumentStore
 from enterprise_pdf_rag.adapters.http.app import create_configured_app
+from enterprise_pdf_rag.adapters.http.chart_qa_schemas import (
+    ChartQueryRequest,
+    ChartQueryResponse,
+)
 from enterprise_pdf_rag.adapters.http.document_schemas import DocumentSnapshotResponse
 from enterprise_pdf_rag.adapters.http.schemas import (
     DemoResponse,
@@ -18,13 +24,16 @@ from enterprise_pdf_rag.adapters.http.schemas import (
 from enterprise_pdf_rag.adapters.pdfspine_document import PdfspineDocumentAdapter
 from enterprise_pdf_rag.adapters.pdfspine_figure import PdfspineFigureParser
 from enterprise_pdf_rag.adapters.processing_runtime import (
+    PROCESSING_OUTPUT,
     index_aia_processing,
     process_aia_layout,
     process_aia_semantics,
 )
+from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
 from enterprise_pdf_rag.adapters.providers import OpenAICompatibleSmoke, load_llm_config
 from enterprise_pdf_rag.adapters.review import write_review
 from enterprise_pdf_rag.adapters.runtime import create_runtime
+from enterprise_pdf_rag.figures.chart_qa.service import ChartQAService
 from enterprise_pdf_rag.figures.models import ExecutionMode
 
 
@@ -43,6 +52,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8766)
+    chart_qa = commands.add_parser(
+        "chart-qa",
+        help="Answer a pinned structured chart query from qualified saved evidence; no models",
+    )
+    chart_qa.add_argument("--request", type=Path, required=True)
+    chart_qa.add_argument("--source-store", type=Path, default=AIA_OUTPUT)
+    chart_qa.add_argument("--processing-store", type=Path, default=PROCESSING_OUTPUT)
     commands.add_parser(
         "ingest-aia", help="Persist and review only the selected AIA PDF; no models"
     )
@@ -141,6 +157,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     arguments = parser.parse_args(argv)
     try:
+        if arguments.command == "chart-qa":
+            request = ChartQueryRequest.model_validate_json(
+                arguments.request.read_bytes()
+            )
+            service = ChartQAService(
+                StoredChartResolver(
+                    LocalDocumentStore(arguments.source_store),
+                    ProcessingStore(arguments.processing_store),
+                    processing_id=request.processing_id,
+                )
+            )
+            chart_response = ChartQueryResponse.from_domain(
+                service.answer(request.to_domain())
+            )
+            sys.stdout.write(chart_response.model_dump_json(indent=2) + "\n")
+            return 0
         if arguments.command == "serve":
             options = _ServerOptions(host=arguments.host, port=arguments.port)
             app = create_configured_app()

@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn",
     "pdfspine==0.10.0",
     "resvg-py==0.5.0",
+    "fonttools==4.65.0",
 ]
 
 [project.scripts]
@@ -47,6 +48,8 @@ packages = ["src/enterprise_pdf_rag"]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
+# Ignored source assets and isolated validation environments are not project code.
+exclude = ['^data/']
 # 裸 `# type: ignore` 直接报错:必须写成 `# type: ignore[code]  # 理由`,
 # 否则一条 ignore 会顺手关掉同一行上所有别的错误,而且没人知道它当初在压什么。
 enable_error_code = ["ignore-without-code"]

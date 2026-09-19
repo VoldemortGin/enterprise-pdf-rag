@@ -12,6 +12,7 @@ from enterprise_pdf_rag.adapters.donut_geometry import (
     native_donut_geometry,
 )
 from enterprise_pdf_rag.adapters.figure_reasoning import PreparedFigure
+from enterprise_pdf_rag.adapters.source_paint import SourcePaintProof
 from enterprise_pdf_rag.figures.models import (
     ChartIR,
     ChartPoint,
@@ -111,8 +112,14 @@ def _corridor(
 class DonutQualification:
     """Trust saved source observations, never model marks, values or status flags."""
 
-    def __init__(self, prepared: PreparedFigure) -> None:
+    def __init__(
+        self,
+        prepared: PreparedFigure,
+        *,
+        source_paint: "SourcePaintProof | None" = None,
+    ) -> None:
         self._prepared = prepared
+        self._source_paint = source_paint
 
     def _source(
         self, svg: SvgArtifact
@@ -146,6 +153,19 @@ class DonutQualification:
         ):
             raise _fail("source_view_binding_or_coordinate_frame_mismatch")
         validate_svg(svg)
+        proof = self._source_paint
+        if proof is not None and (
+            proof.source_sha256 != svg.source.document_sha256
+            or proof.source_revision != svg.source.source_revision
+            or proof.page_index != svg.source.page_index
+            or proof.native_svg_digest != self._prepared.view.native_svg_digest
+            or proof.crop_svg_digest != self._prepared.view.crop_svg_digest
+            or proof.bbox != svg.source.bbox
+            or proof.source_text_digest
+            != sha256(repr(self._prepared.paint_text_spans).encode()).hexdigest()
+            or proof.coverage != "complete_source_paint"
+        ):
+            raise _fail("source_paint_proof_binding_mismatch")
         try:
             geometry = native_donut_geometry(
                 self._prepared.crop_svg,
@@ -153,6 +173,17 @@ class DonutQualification:
                 self._prepared.view.native_svg_digest,
                 text_spans=self._prepared.paint_text_spans,
                 excluded_span_ids=self._prepared.excluded_span_ids,
+                proven_glyph_refs=tuple(glyph.native_path_ref for glyph in proof.glyphs)
+                if proof
+                else (),
+                transparent_refs=tuple(
+                    vector.native_path_ref
+                    for vector in proof.vectors
+                    if vector.role == "transparent"
+                )
+                if proof
+                else (),
+                source_proof_id=proof.proof_id if proof else None,
             )
         except ValueError as error:
             raise _fail(str(error)) from None
@@ -243,6 +274,50 @@ class DonutQualification:
             used_categories.append(categories[0].source_span_id)
         if len(set(used_sectors)) != 2 or len(set(used_categories)) != 2:
             raise _fail("source_sector_label_mapping_not_one_to_one")
+        if proof is not None:
+            expected_spans = {
+                element.source_span_id
+                for element in (
+                    *titles,
+                    *metrics,
+                    *periods,
+                    *literals,
+                    *external_categories,
+                )
+            }
+            for glyph in proof.glyphs:
+                if glyph.source_span_id in expected_spans:
+                    if not (
+                        svg.source.bbox[0]
+                        <= glyph.bounds[0]
+                        < glyph.bounds[2]
+                        <= svg.source.bbox[2]
+                        and svg.source.bbox[1]
+                        <= glyph.bounds[1]
+                        < glyph.bounds[3]
+                        <= svg.source.bbox[3]
+                    ):
+                        raise _fail("qualified_field_glyph_crosses_crop_boundary")
+                elif glyph.source_span_id not in self._prepared.excluded_span_ids:
+                    raise _fail("unexplained_source_text_inside_chart")
+                elif any(
+                    max(glyph.bounds[0], box[0]) < min(glyph.bounds[2], box[2])
+                    and max(glyph.bounds[1], box[1]) < min(glyph.bounds[3], box[3])
+                    for box in (
+                        outer,
+                        *(
+                            element.anchor.bbox
+                            for element in (
+                                *titles,
+                                *metrics,
+                                *periods,
+                                *literals,
+                                *external_categories,
+                            )
+                        ),
+                    )
+                ):
+                    raise _fail("neighbor_text_overlaps_qualified_chart")
         return (
             titles[0],
             metrics[0],
@@ -392,7 +467,12 @@ class DonutQualification:
             svg.binding,
             svg.source,
             tuple(fields),
-            "native-MCLZ-annular-direct-label-v2; curve tolerance=0.025pt; radial tolerance=0.15pt; complete complementary annulus; label margin=1pt; clear horizontal corridor; no area-derived values",
+            (
+                "source-replay-font-evenodd-annular-direct-label-v3; "
+                if self._source_paint
+                else "native-MCLZ-annular-direct-label-v2; "
+            )
+            + "curve tolerance=0.025pt; radial tolerance=0.15pt; complete complementary annulus; label margin=1pt; clear horizontal corridor; no area-derived values",
             ExecutionMode.PRODUCTION,
             (
                 f"native-svg:{self._prepared.view.native_svg_digest}",

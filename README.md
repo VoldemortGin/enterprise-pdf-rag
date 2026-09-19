@@ -4,9 +4,9 @@ Python 3.12 / uv 财务 PDF RAG 后端。当前业务范围是**单份真实 AIA
 
 这是 AIA Group 报告。页面布局、typed IR、独立描述和资格回执分别保存；模型产物初始为 **pending**，成功保存不等于独立验证。只有逐字原文投影或具有完整字段资格的描述可以进入真实本地 embedding；ChartIR 和 SVG 不进入 embedding。`text.json` 仍是 pdfspine 原文观测。每页/对象是否已完成、失败或尚未运行，以处理 manifest 和实际文件为准。
 
-本次实际产物覆盖 **20 页、241 个对象，241 份 IR 和 241 份描述/来源转录**。189 份描述投影具备有限检索资格，其中 180 份仅证明原文转录，9 份仅证明图表标签；独立数值关系资格仍为 0。分类型结果和限制见 [本次验收记录](docs/processing-run-2026-09-19.md)。
+本次实际产物覆盖 **20 页、241 个对象，241 份 IR 和 241 份描述/来源转录**。189 份描述投影保持原样复用，其中 180 份证明原文转录，9 份证明图表标签。第 18 页 Distribution Mix 的一个图表另已取得 **2 个显式百分比的数值关系资格**，支持受限查值和有序百分点差；其他图表不因此获准数值回答。独立真实 API 评测的 19 个正例、拒答和证据损坏案例通过，仍不代表完整 P5 或通用财务问答完成。初始加工结果见 [加工验收记录](docs/processing-run-2026-09-19.md)，新增资格与限制见 [ChartQA 阶段说明](docs/chart-qa-stage.md)。
 
-本地继续使用 uv；独立的 Python 3.12 环境可直接 `python -m pip install .` 安装完整后端运行依赖，包括 pdfspine 和 SVG renderer。`pdf` / `processing` extras 保留为空兼容别名，无需额外选择。安装后用 `enterprise-pdf-rag serve` 启动已有 API，并通过 `APP_ROOT_DIR` / `APP_DATA_DIR` 指定源码目录以外的工作区与持久数据。Open WebUI 仍是单独安装和隔离的服务，不随本包安装。环境条件、可复制命令及 Databricks 平台区别见 [部署说明](docs/databricks-deployment.md)；本地安装验证不代表已在 Databricks 部署。
+本地继续使用 uv；独立的 Python 3.12 环境可直接 `python -m pip install .` 安装完整后端运行依赖，包括 pdfspine、SVG renderer 和来源字形验证所需的 FontTools。`pdf` / `processing` extras 保留为空兼容别名，无需额外选择。安装后用 `enterprise-pdf-rag serve` 启动已有 API，并通过 `APP_ROOT_DIR` / `APP_DATA_DIR` 指定源码目录以外的工作区与持久数据。Open WebUI 仍是单独安装和隔离的服务，不随本包安装。环境条件、可复制命令及 Databricks 平台区别见 [部署说明](docs/databricks-deployment.md)；本地安装验证不代表已在 Databricks 部署。
 
 ## 处理选定文件
 
@@ -99,8 +99,17 @@ Open WebUI 的内置上传、PDF 解析、RAG、工具和后台自动生成被�
 - `GET /v1/processing/status`、`GET /v1/processing/manifest`：固定处理批次的实际状态和完整依赖。
 - `GET /v1/processing/review/review.html`：本批次逐对象 SVG / IR / 描述 / 诊断。
 - `POST /v1/processing/search`、`POST /v1/processing/context`：固定 snapshot 的描述检索与无模型证据回填；缺索引/服务配置明确拒绝。
+- `POST /v1/queries`：结构化 ChartQA。仅在固定 member 的来源数值资格通过后，支持显式百分比查值与同图、同系列、同期间的百分点差；每个字段保留 SVG/来源 occurrence 引用。
 
 未知模型、越界页、错 snapshot、缺源证据或财务推断请求均明确拒绝。已有持久源资产、不可变 manifest 和本地原子指针；生产级多存储 CAS 发布、ACL/撤回、并发调度与完整财务 QA 尚未实现。
+
+结构化问题也可直接读取持久化证据执行，不调用模型：
+
+```sh
+uv run --locked --no-sync enterprise-pdf-rag chart-qa --request query.json
+```
+
+`query.json` 必须指定 `kind: "chart"`、实际 `processing_id` / `snapshot_id` / `member_id`、`operation`、`series`、`period`、`unit` 及带 `point_id` / `category` 的 `points`。`lookup` 接受一个点；`percentage_point_difference` 接受两个有序点，结果单位为 `percentage_points`，不会伪造原文 display。请求不能提交数值、verified 标志或任意公式。旧标签资格快照仍拒绝数值查询；不可用证据与跨快照错误也不会回退到摘要。具体资格前提、独立金标和未完成的 PRD 门见 [ChartQA 阶段说明](docs/chart-qa-stage.md)。
 
 ## 显式合成回归示例
 

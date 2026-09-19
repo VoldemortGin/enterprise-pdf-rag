@@ -7,7 +7,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import Field
 
+from enterprise_pdf_rag.adapters.chart_qa import StoredChartResolver
+from enterprise_pdf_rag.adapters.chart_qa_evaluation import read_evaluation
 from enterprise_pdf_rag.adapters.document_store import LocalDocumentStore
+from enterprise_pdf_rag.adapters.http.chart_qa import create_chart_qa_router
 from enterprise_pdf_rag.adapters.http.processing_schemas import (
     ProcessingSearchRequest,
     ProcessingSnapshotResponse,
@@ -20,6 +23,7 @@ from enterprise_pdf_rag.adapters.processing_retrieval import (
 )
 from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
 from enterprise_pdf_rag.adapters.source_publication import validate_processing_source
+from enterprise_pdf_rag.figures.chart_qa.service import ChartQAService
 from enterprise_pdf_rag.figures.ports import EmbeddingPort
 from enterprise_pdf_rag.processing.models import ProcessingManifest
 from enterprise_pdf_rag.processing.retrieval import PinnedRetrievalHit, RetrievalContext
@@ -97,6 +101,7 @@ def processing_summary(processing_id: str, manifest: ProcessingManifest) -> str:
     return (
         f"已保存 {state.source_page_count} 页源资产;本次处理物理页 {pages}。\n\n识别 {state.object_count} 个对象;实际保存 {state.ir_artifacts} 份 typed IR 与 {state.description_artifacts} 份独立描述/逐字原文 projection。失败阶段 {state.failed_stages},unavailable 阶段 {state.unavailable_stages},deferred 阶段 {state.deferred_stages}。\n\n模型推断不等于验证。当前获准数值 claim:{state.qualified_claim_count};原文转录不证明金融关系。\n\n[打开前20页处理结果与各对象 SVG / IR / 描述 / 诊断](http://127.0.0.1:8766/v1/processing/review/review.html)"
         + retrieval
+        + "\n\n已验证的受限数值查值/百分点差仅通过结构化 `POST /v1/queries` 执行;当前聊天仍用于来源和产物审阅,不开放任意金融问答。"
     )
 
 
@@ -109,6 +114,13 @@ def create_processing_router(
 ) -> APIRouter:
     router = APIRouter()
     pinned = outputs.load(processing_id)
+    router.include_router(
+        create_chart_qa_router(
+            ChartQAService(
+                StoredChartResolver(sources, outputs, processing_id=processing_id)
+            )
+        )
+    )
     root = (outputs.root / "runs" / processing_id).resolve()
 
     def checked() -> ProcessingManifest:
@@ -143,7 +155,7 @@ def create_processing_router(
         checked()
         if (
             re.fullmatch(
-                r"(?:review\.html|manifest\.json|coverage\.json|retrieval-(?:example|validation)\.json|retrieval-evaluations/[0-9a-f]{64}/(?:retrieval-(?:example|validation)|evaluation)\.json|retrieval-controls/[0-9a-f]{64}/controls\.json|page-\d{3}/(?:[a-z_.-]+\.(?:html|json)|objects/object-[0-9a-f]{20}/[a-z_-]+\.(?:html|json|svg|png)))",
+                r"(?:review\.html|manifest\.json|coverage\.json|retrieval-(?:example|validation)\.json|retrieval-evaluations/[0-9a-f]{64}/(?:retrieval-(?:example|validation)|evaluation)\.json|retrieval-controls/[0-9a-f]{64}/controls\.json|chart-qa-evaluations/[0-9a-f]{64}/(?:gold|observations|report)\.json|page-\d{3}/(?:[a-z_.-]+\.(?:html|json)|objects/object-[0-9a-f]{20}/[a-z_-]+\.(?:html|json|svg|png)))",
                 relative,
             )
             is None
@@ -153,6 +165,13 @@ def create_processing_router(
         if not target.is_relative_to(root) or not target.is_file():
             raise HTTPException(404, "Processing review artifact is unavailable")
         content = target.read_bytes()
+        if relative.startswith("chart-qa-evaluations/"):
+            try:
+                read_evaluation(target.parent)
+            except (OSError, ValueError):
+                raise HTTPException(
+                    409, "ChartQA evaluation evidence is missing or inconsistent"
+                ) from None
         if (
             relative.startswith("retrieval-controls/")
             and sha256(content).hexdigest() != target.parent.name

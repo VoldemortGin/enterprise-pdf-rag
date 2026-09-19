@@ -10,7 +10,8 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from enterprise_pdf_rag.adapters.chart_publication import ChartPublicationReceipt
+from enterprise_pdf_rag.adapters.chart_publication import parse_chart_receipt
+from enterprise_pdf_rag.adapters.chart_qa_evaluation import read_evaluation
 from enterprise_pdf_rag.adapters.document_store import LocalDocumentStore
 from enterprise_pdf_rag.adapters.http.processing_schemas import ProcessingEnvelope
 from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
@@ -133,6 +134,26 @@ def _retrieval_records(run: Path) -> str:
     )
 
 
+def _chart_qa_records(run: Path) -> str:
+    links = []
+    for folder in sorted((run / "chart-qa-evaluations").glob("*")):
+        if re.fullmatch(r"[0-9a-f]{64}", folder.name) is None:
+            continue
+        report = read_evaluation(folder)
+        base = "chart-qa-evaluations/" + folder.name
+        state = "通过" if report.passed else "未通过"
+        links.append(
+            f'<li>受限 ChartQA {state}: <a href="{base}/report.json">独立评测</a> · <a href="{base}/observations.json">实际 HTTP 回答与拒答</a> · <a href="{base}/gold.json">来源金标</a></li>'
+        )
+    if not links:
+        return ""
+    return (
+        '<h2 id="chart-qa">可追溯数值查询</h2><p>仅验收已资格图表的显式百分比 lookup 和有序百分点差;不代表完整 P5 或任意财务问答。</p><ul>'
+        + "".join(links)
+        + "</ul>"
+    )
+
+
 def _coverage(
     outputs: ProcessingStore, manifest: ProcessingManifest
 ) -> tuple[str, str]:
@@ -168,7 +189,7 @@ def _coverage(
             elif kind is not ObjectKind.CHART:
                 key = "source_transcription_qualified"
             else:
-                receipt = ChartPublicationReceipt.model_validate_json(
+                receipt = parse_chart_receipt(
                     outputs.assets.get(qualification.artifact)
                 )
                 key = (
@@ -214,7 +235,11 @@ def _coverage(
 
 
 def export_processing_review(
-    sources: LocalDocumentStore, outputs: ProcessingStore, snapshot_id: str
+    sources: LocalDocumentStore,
+    outputs: ProcessingStore,
+    snapshot_id: str,
+    *,
+    update_current: bool = True,
 ) -> Path:
     manifest = outputs.load(snapshot_id)
     source = sources.load(manifest.scope.source_manifest_id)
@@ -255,12 +280,15 @@ def export_processing_review(
         + coverage
         + '<p><a href="manifest.json">不可变 processing manifest</a> · <a href="coverage.json">分类型覆盖与资格统计</a></p>'
         + _retrieval_records(run)
+        + _chart_qa_records(run)
         + "<ol>"
         + "".join(links)
         + "</ol>"
     )
     rendered = _html("前 20 页处理审阅", body)
     (run / "review.html").write_text(rendered, encoding="utf-8")
+    if not update_current:
+        return run / "review.html"
     current = _html(
         "当前处理批次",
         _summary(manifest)

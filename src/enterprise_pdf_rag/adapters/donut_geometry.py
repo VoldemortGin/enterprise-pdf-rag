@@ -358,6 +358,9 @@ def native_donut_geometry(
     *,
     text_spans: tuple[TextSpan, ...],
     excluded_span_ids: tuple[str, ...],
+    proven_glyph_refs: tuple[str, ...] = (),
+    transparent_refs: tuple[str, ...] = (),
+    source_proof_id: str | None = None,
 ) -> NativeDonutGeometry:
     root = ElementTree.fromstring(svg)
     nodes = {node.get("id"): node for node in root.iter() if node.get("id")}
@@ -452,9 +455,18 @@ def native_donut_geometry(
                 )
             if not _intersects(paint_bounds, bbox):
                 return
+            reference = _path_reference(node, matrix, clips)
+            # Only the independent PDF replay/font verifier supplies these
+            # references. Publication reconstructs that proof from pinned PDF
+            # bytes; a serialized collection of hashes is never authority.
+            if source_proof_id is not None and reference in transparent_refs:
+                review_refs.append(f"{source_proof_id}:transparent:{reference}")
+                return
             if unresolved_paint or stroke != "none":
                 raise ValueError("unsupported_source_paint")
-            reference = _path_reference(node, matrix, clips)
+            if source_proof_id is not None and reference in proven_glyph_refs:
+                review_refs.append(f"{source_proof_id}:glyph:{reference}")
+                return
             if paint_index == 1 and fill.lower() == "#ffffff" and _unit_matrix(matrix):
                 corners = _polygon(node.get("d", ""))
                 if (
@@ -462,7 +474,13 @@ def native_donut_geometry(
                     and len({point[0] for point in corners}) == 2
                     and len({point[1] for point in corners}) == 2
                     and hull == page_bounds
-                    and not clips
+                    and (
+                        not clips
+                        or (
+                            source_proof_id is not None
+                            and all(_inside(hull, clip_bounds) for clip_bounds in clips)
+                        )
+                    )
                 ):
                     review_refs.append(
                         f"native-first-page-background:{native_digest}:path:{reference}"
@@ -490,6 +508,11 @@ def native_donut_geometry(
                 return
             if not _unit_matrix(matrix):
                 raise ValueError("unsupported_source_transform")
+            if (
+                source_proof_id is not None
+                and node.get("fill-rule", "nonzero") != "evenodd"
+            ):
+                raise ValueError("unsupported_source_sector_fill_rule")
             try:
                 points = tuple(
                     _transform(matrix, p) for p in _polygon(node.get("d", ""))

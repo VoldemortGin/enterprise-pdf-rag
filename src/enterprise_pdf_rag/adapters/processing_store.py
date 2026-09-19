@@ -72,6 +72,14 @@ class ProcessingStore:
     def publish(
         self, manifest: ProcessingManifest, *, sources: LocalDocumentStore
     ) -> str:
+        digest = self.save_draft(manifest, sources=sources)
+        self._write_pointer(self.root / "current-processing", digest)
+        return digest
+
+    def save_draft(
+        self, manifest: ProcessingManifest, *, sources: LocalDocumentStore
+    ) -> str:
+        """Validate an immutable release without changing active discovery state."""
         for ref in processing_assets(manifest):
             self.assets.get(ref)
         ref = self.assets.put(
@@ -87,7 +95,6 @@ class ProcessingStore:
         validate_processing_source(
             sources=sources, artifacts=self.assets, manifest=manifest, plan=plan
         )
-        self._write_pointer(self.root / "current-processing", ref.sha256)
         return ref.sha256
 
     def load(self, snapshot_id: str) -> ProcessingManifest:
