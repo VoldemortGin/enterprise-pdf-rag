@@ -1,0 +1,1531 @@
+{
+  "DemoRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "snapshot_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Snapshot Id",
+        "type": "string"
+      },
+      "query": {
+        "default": "Revenue 2025",
+        "maxLength": 2000,
+        "minLength": 1,
+        "pattern": "\\w",
+        "title": "Query",
+        "type": "string"
+      }
+    },
+    "required": [
+      "snapshot_id"
+    ],
+    "title": "DemoRequest",
+    "type": "object"
+  },
+  "DemoResponse": {
+    "$defs": {
+      "ChartAxis": {
+        "properties": {
+          "axis_id": {
+            "title": "Axis Id",
+            "type": "string"
+          },
+          "label": {
+            "$ref": "#/$defs/TextField"
+          },
+          "unit": {
+            "$ref": "#/$defs/TextField"
+          },
+          "scale": {
+            "title": "Scale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "axis_id",
+          "label",
+          "unit",
+          "scale"
+        ],
+        "title": "ChartAxis",
+        "type": "object"
+      },
+      "ChartIR": {
+        "properties": {
+          "binding": {
+            "$ref": "#/$defs/SvgBinding"
+          },
+          "grammar": {
+            "title": "Grammar",
+            "type": "string"
+          },
+          "axes": {
+            "items": {
+              "$ref": "#/$defs/ChartAxis"
+            },
+            "title": "Axes",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/$defs/ChartPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "producer": {
+            "title": "Producer",
+            "type": "string"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification"
+          },
+          "execution_mode": {
+            "$ref": "#/$defs/ExecutionMode",
+            "default": "offline-demo"
+          }
+        },
+        "required": [
+          "binding",
+          "grammar",
+          "axes",
+          "points",
+          "producer",
+          "verification"
+        ],
+        "title": "ChartIR",
+        "type": "object"
+      },
+      "ChartPoint": {
+        "properties": {
+          "point_id": {
+            "title": "Point Id",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/$defs/TextField"
+          },
+          "category": {
+            "$ref": "#/$defs/TextField"
+          },
+          "unit": {
+            "$ref": "#/$defs/TextField"
+          },
+          "value": {
+            "$ref": "#/$defs/NumericObservation"
+          }
+        },
+        "required": [
+          "point_id",
+          "series",
+          "category",
+          "unit",
+          "value"
+        ],
+        "title": "ChartPoint",
+        "type": "object"
+      },
+      "Confidence": {
+        "properties": {
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "method"
+        ],
+        "title": "Confidence",
+        "type": "object"
+      },
+      "Evidence": {
+        "properties": {
+          "element_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Element Ids",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification"
+          },
+          "confidence": {
+            "$ref": "#/$defs/Confidence"
+          }
+        },
+        "required": [
+          "element_ids",
+          "verification",
+          "confidence"
+        ],
+        "title": "Evidence",
+        "type": "object"
+      },
+      "ExecutionMode": {
+        "enum": [
+          "offline-demo",
+          "production"
+        ],
+        "title": "ExecutionMode",
+        "type": "string"
+      },
+      "FieldEvidence": {
+        "properties": {
+          "field_path": {
+            "title": "Field Path",
+            "type": "string"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/$defs/SvgElement"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "confidence": {
+            "$ref": "#/$defs/Confidence"
+          }
+        },
+        "required": [
+          "field_path",
+          "elements",
+          "confidence"
+        ],
+        "title": "FieldEvidence",
+        "type": "object"
+      },
+      "FigureBundle": {
+        "properties": {
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "svg_artifact_id": {
+            "title": "Svg Artifact Id",
+            "type": "string"
+          },
+          "svg_digest": {
+            "title": "Svg Digest",
+            "type": "string"
+          },
+          "chart_ir_artifact_id": {
+            "title": "Chart Ir Artifact Id",
+            "type": "string"
+          },
+          "description_id": {
+            "title": "Description Id",
+            "type": "string"
+          },
+          "embedding_key": {
+            "title": "Embedding Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "figure_id",
+          "source_revision",
+          "svg_artifact_id",
+          "svg_digest",
+          "chart_ir_artifact_id",
+          "description_id",
+          "embedding_key"
+        ],
+        "title": "FigureBundle",
+        "type": "object"
+      },
+      "HitSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "bundle_id": {
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "description_id": {
+            "title": "Description Id",
+            "type": "string"
+          },
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "svg_artifact_id": {
+            "title": "Svg Artifact Id",
+            "type": "string"
+          },
+          "svg_digest": {
+            "title": "Svg Digest",
+            "type": "string"
+          },
+          "chart_ir_artifact_id": {
+            "title": "Chart Ir Artifact Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "score": {
+            "default": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "bundle_id",
+          "description_id",
+          "figure_id",
+          "source_revision",
+          "svg_artifact_id",
+          "svg_digest",
+          "chart_ir_artifact_id",
+          "text"
+        ],
+        "title": "HitSchema",
+        "type": "object"
+      },
+      "NumericObservation": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "kind": {
+            "$ref": "#/$defs/ValueKind"
+          },
+          "evidence": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "required": [
+          "value",
+          "kind",
+          "evidence"
+        ],
+        "title": "NumericObservation",
+        "type": "object"
+      },
+      "ReasoningView": {
+        "properties": {
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "bundle_id": {
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "chart_ir": {
+            "$ref": "#/$defs/ChartIR"
+          },
+          "svg": {
+            "$ref": "#/$defs/SvgArtifact"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/$defs/FieldEvidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "bundle_id",
+          "chart_ir",
+          "svg",
+          "evidence"
+        ],
+        "title": "ReasoningView",
+        "type": "object"
+      },
+      "SourceAnchor": {
+        "properties": {
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "document_sha256": {
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "bbox": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox",
+            "type": "array"
+          },
+          "coordinate_frame": {
+            "default": "page-top-left",
+            "title": "Coordinate Frame",
+            "type": "string"
+          },
+          "rotation": {
+            "default": 0,
+            "title": "Rotation",
+            "type": "integer"
+          },
+          "transform": {
+            "default": [
+              1.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            "maxItems": 6,
+            "minItems": 6,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Transform",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_revision",
+          "document_sha256",
+          "page_index",
+          "bbox"
+        ],
+        "title": "SourceAnchor",
+        "type": "object"
+      },
+      "SvgArtifact": {
+        "properties": {
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceAnchor"
+          },
+          "svg": {
+            "title": "Svg",
+            "type": "string"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/$defs/SvgElement"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification",
+            "default": "pending"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "figure_id",
+          "source",
+          "svg",
+          "elements"
+        ],
+        "title": "SvgArtifact",
+        "type": "object"
+      },
+      "SvgBinding": {
+        "properties": {
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "svg_artifact_id": {
+            "title": "Svg Artifact Id",
+            "type": "string"
+          },
+          "svg_digest": {
+            "title": "Svg Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "figure_id",
+          "source_revision",
+          "svg_artifact_id",
+          "svg_digest"
+        ],
+        "title": "SvgBinding",
+        "type": "object"
+      },
+      "SvgElement": {
+        "properties": {
+          "element_id": {
+            "title": "Element Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "anchor": {
+            "$ref": "#/$defs/SourceAnchor"
+          }
+        },
+        "required": [
+          "element_id",
+          "text",
+          "anchor"
+        ],
+        "title": "SvgElement",
+        "type": "object"
+      },
+      "TextField": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "required": [
+          "text",
+          "evidence"
+        ],
+        "title": "TextField",
+        "type": "object"
+      },
+      "ValueKind": {
+        "enum": [
+          "explicit",
+          "derived",
+          "estimated",
+          "unavailable"
+        ],
+        "title": "ValueKind",
+        "type": "string"
+      },
+      "Verification": {
+        "enum": [
+          "verified",
+          "pending",
+          "rejected"
+        ],
+        "title": "Verification",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "figure-api-v1",
+        "default": "figure-api-v1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "execution_mode": {
+        "const": "offline-demo",
+        "default": "offline-demo",
+        "title": "Execution Mode",
+        "type": "string"
+      },
+      "bundle": {
+        "$ref": "#/$defs/FigureBundle"
+      },
+      "hits": {
+        "items": {
+          "$ref": "#/$defs/HitSchema"
+        },
+        "title": "Hits",
+        "type": "array"
+      },
+      "context": {
+        "$ref": "#/$defs/ReasoningView"
+      }
+    },
+    "required": [
+      "bundle",
+      "hits",
+      "context"
+    ],
+    "title": "DemoResponse",
+    "type": "object"
+  },
+  "SearchRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "snapshot_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Snapshot Id",
+        "type": "string"
+      },
+      "query": {
+        "maxLength": 2000,
+        "minLength": 1,
+        "pattern": "\\w",
+        "title": "Query",
+        "type": "string"
+      },
+      "limit": {
+        "default": 5,
+        "maximum": 100,
+        "minimum": 1,
+        "title": "Limit",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "snapshot_id",
+      "query"
+    ],
+    "title": "SearchRequest",
+    "type": "object"
+  },
+  "SearchResponse": {
+    "$defs": {
+      "HitSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "bundle_id": {
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "description_id": {
+            "title": "Description Id",
+            "type": "string"
+          },
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "svg_artifact_id": {
+            "title": "Svg Artifact Id",
+            "type": "string"
+          },
+          "svg_digest": {
+            "title": "Svg Digest",
+            "type": "string"
+          },
+          "chart_ir_artifact_id": {
+            "title": "Chart Ir Artifact Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "score": {
+            "default": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "bundle_id",
+          "description_id",
+          "figure_id",
+          "source_revision",
+          "svg_artifact_id",
+          "svg_digest",
+          "chart_ir_artifact_id",
+          "text"
+        ],
+        "title": "HitSchema",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "figure-api-v1",
+        "default": "figure-api-v1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "execution_mode": {
+        "const": "offline-demo",
+        "default": "offline-demo",
+        "title": "Execution Mode",
+        "type": "string"
+      },
+      "snapshot_id": {
+        "title": "Snapshot Id",
+        "type": "string"
+      },
+      "hits": {
+        "items": {
+          "$ref": "#/$defs/HitSchema"
+        },
+        "title": "Hits",
+        "type": "array"
+      }
+    },
+    "required": [
+      "snapshot_id",
+      "hits"
+    ],
+    "title": "SearchResponse",
+    "type": "object"
+  },
+  "ContextRequest": {
+    "$defs": {
+      "HitSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "bundle_id": {
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "description_id": {
+            "title": "Description Id",
+            "type": "string"
+          },
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "svg_artifact_id": {
+            "title": "Svg Artifact Id",
+            "type": "string"
+          },
+          "svg_digest": {
+            "title": "Svg Digest",
+            "type": "string"
+          },
+          "chart_ir_artifact_id": {
+            "title": "Chart Ir Artifact Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "score": {
+            "default": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "bundle_id",
+          "description_id",
+          "figure_id",
+          "source_revision",
+          "svg_artifact_id",
+          "svg_digest",
+          "chart_ir_artifact_id",
+          "text"
+        ],
+        "title": "HitSchema",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "snapshot_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Snapshot Id",
+        "type": "string"
+      },
+      "hit": {
+        "$ref": "#/$defs/HitSchema"
+      }
+    },
+    "required": [
+      "snapshot_id",
+      "hit"
+    ],
+    "title": "ContextRequest",
+    "type": "object"
+  },
+  "ContextResponse": {
+    "$defs": {
+      "ChartAxis": {
+        "properties": {
+          "axis_id": {
+            "title": "Axis Id",
+            "type": "string"
+          },
+          "label": {
+            "$ref": "#/$defs/TextField"
+          },
+          "unit": {
+            "$ref": "#/$defs/TextField"
+          },
+          "scale": {
+            "title": "Scale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "axis_id",
+          "label",
+          "unit",
+          "scale"
+        ],
+        "title": "ChartAxis",
+        "type": "object"
+      },
+      "ChartIR": {
+        "properties": {
+          "binding": {
+            "$ref": "#/$defs/SvgBinding"
+          },
+          "grammar": {
+            "title": "Grammar",
+            "type": "string"
+          },
+          "axes": {
+            "items": {
+              "$ref": "#/$defs/ChartAxis"
+            },
+            "title": "Axes",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/$defs/ChartPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "producer": {
+            "title": "Producer",
+            "type": "string"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification"
+          },
+          "execution_mode": {
+            "$ref": "#/$defs/ExecutionMode",
+            "default": "offline-demo"
+          }
+        },
+        "required": [
+          "binding",
+          "grammar",
+          "axes",
+          "points",
+          "producer",
+          "verification"
+        ],
+        "title": "ChartIR",
+        "type": "object"
+      },
+      "ChartPoint": {
+        "properties": {
+          "point_id": {
+            "title": "Point Id",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/$defs/TextField"
+          },
+          "category": {
+            "$ref": "#/$defs/TextField"
+          },
+          "unit": {
+            "$ref": "#/$defs/TextField"
+          },
+          "value": {
+            "$ref": "#/$defs/NumericObservation"
+          }
+        },
+        "required": [
+          "point_id",
+          "series",
+          "category",
+          "unit",
+          "value"
+        ],
+        "title": "ChartPoint",
+        "type": "object"
+      },
+      "Confidence": {
+        "properties": {
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "method"
+        ],
+        "title": "Confidence",
+        "type": "object"
+      },
+      "Evidence": {
+        "properties": {
+          "element_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Element Ids",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification"
+          },
+          "confidence": {
+            "$ref": "#/$defs/Confidence"
+          }
+        },
+        "required": [
+          "element_ids",
+          "verification",
+          "confidence"
+        ],
+        "title": "Evidence",
+        "type": "object"
+      },
+      "ExecutionMode": {
+        "enum": [
+          "offline-demo",
+          "production"
+        ],
+        "title": "ExecutionMode",
+        "type": "string"
+      },
+      "FieldEvidence": {
+        "properties": {
+          "field_path": {
+            "title": "Field Path",
+            "type": "string"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/$defs/SvgElement"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "confidence": {
+            "$ref": "#/$defs/Confidence"
+          }
+        },
+        "required": [
+          "field_path",
+          "elements",
+          "confidence"
+        ],
+        "title": "FieldEvidence",
+        "type": "object"
+      },
+      "NumericObservation": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "kind": {
+            "$ref": "#/$defs/ValueKind"
+          },
+          "evidence": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "required": [
+          "value",
+          "kind",
+          "evidence"
+        ],
+        "title": "NumericObservation",
+        "type": "object"
+      },
+      "ReasoningView": {
+        "properties": {
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "bundle_id": {
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "chart_ir": {
+            "$ref": "#/$defs/ChartIR"
+          },
+          "svg": {
+            "$ref": "#/$defs/SvgArtifact"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/$defs/FieldEvidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "bundle_id",
+          "chart_ir",
+          "svg",
+          "evidence"
+        ],
+        "title": "ReasoningView",
+        "type": "object"
+      },
+      "SourceAnchor": {
+        "properties": {
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "document_sha256": {
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "bbox": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox",
+            "type": "array"
+          },
+          "coordinate_frame": {
+            "default": "page-top-left",
+            "title": "Coordinate Frame",
+            "type": "string"
+          },
+          "rotation": {
+            "default": 0,
+            "title": "Rotation",
+            "type": "integer"
+          },
+          "transform": {
+            "default": [
+              1.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            "maxItems": 6,
+            "minItems": 6,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Transform",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_revision",
+          "document_sha256",
+          "page_index",
+          "bbox"
+        ],
+        "title": "SourceAnchor",
+        "type": "object"
+      },
+      "SvgArtifact": {
+        "properties": {
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceAnchor"
+          },
+          "svg": {
+            "title": "Svg",
+            "type": "string"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/$defs/SvgElement"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification",
+            "default": "pending"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "figure_id",
+          "source",
+          "svg",
+          "elements"
+        ],
+        "title": "SvgArtifact",
+        "type": "object"
+      },
+      "SvgBinding": {
+        "properties": {
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "svg_artifact_id": {
+            "title": "Svg Artifact Id",
+            "type": "string"
+          },
+          "svg_digest": {
+            "title": "Svg Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "figure_id",
+          "source_revision",
+          "svg_artifact_id",
+          "svg_digest"
+        ],
+        "title": "SvgBinding",
+        "type": "object"
+      },
+      "SvgElement": {
+        "properties": {
+          "element_id": {
+            "title": "Element Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "anchor": {
+            "$ref": "#/$defs/SourceAnchor"
+          }
+        },
+        "required": [
+          "element_id",
+          "text",
+          "anchor"
+        ],
+        "title": "SvgElement",
+        "type": "object"
+      },
+      "TextField": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/$defs/Evidence"
+          }
+        },
+        "required": [
+          "text",
+          "evidence"
+        ],
+        "title": "TextField",
+        "type": "object"
+      },
+      "ValueKind": {
+        "enum": [
+          "explicit",
+          "derived",
+          "estimated",
+          "unavailable"
+        ],
+        "title": "ValueKind",
+        "type": "string"
+      },
+      "Verification": {
+        "enum": [
+          "verified",
+          "pending",
+          "rejected"
+        ],
+        "title": "Verification",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "figure-api-v1",
+        "default": "figure-api-v1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "execution_mode": {
+        "const": "offline-demo",
+        "default": "offline-demo",
+        "title": "Execution Mode",
+        "type": "string"
+      },
+      "context": {
+        "$ref": "#/$defs/ReasoningView"
+      }
+    },
+    "required": [
+      "context"
+    ],
+    "title": "ContextResponse",
+    "type": "object"
+  },
+  "ExtractionResponse": {
+    "$defs": {
+      "SourceAnchor": {
+        "properties": {
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          },
+          "document_sha256": {
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "bbox": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox",
+            "type": "array"
+          },
+          "coordinate_frame": {
+            "default": "page-top-left",
+            "title": "Coordinate Frame",
+            "type": "string"
+          },
+          "rotation": {
+            "default": 0,
+            "title": "Rotation",
+            "type": "integer"
+          },
+          "transform": {
+            "default": [
+              1.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            "maxItems": 6,
+            "minItems": 6,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Transform",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_revision",
+          "document_sha256",
+          "page_index",
+          "bbox"
+        ],
+        "title": "SourceAnchor",
+        "type": "object"
+      },
+      "SvgArtifact": {
+        "properties": {
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceAnchor"
+          },
+          "svg": {
+            "title": "Svg",
+            "type": "string"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/$defs/SvgElement"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/$defs/Verification",
+            "default": "pending"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "figure_id",
+          "source",
+          "svg",
+          "elements"
+        ],
+        "title": "SvgArtifact",
+        "type": "object"
+      },
+      "SvgElement": {
+        "properties": {
+          "element_id": {
+            "title": "Element Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "anchor": {
+            "$ref": "#/$defs/SourceAnchor"
+          }
+        },
+        "required": [
+          "element_id",
+          "text",
+          "anchor"
+        ],
+        "title": "SvgElement",
+        "type": "object"
+      },
+      "Verification": {
+        "enum": [
+          "verified",
+          "pending",
+          "rejected"
+        ],
+        "title": "Verification",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "figure-api-v1",
+        "default": "figure-api-v1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "artifact_id": {
+        "title": "Artifact Id",
+        "type": "string"
+      },
+      "artifact": {
+        "$ref": "#/$defs/SvgArtifact"
+      }
+    },
+    "required": [
+      "artifact_id",
+      "artifact"
+    ],
+    "title": "ExtractionResponse",
+    "type": "object"
+  }
+}
