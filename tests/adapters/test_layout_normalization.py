@@ -108,7 +108,9 @@ def test_reviewed_p18_chart_bounds_expand_model_roi_and_lock_first_donut() -> No
     payload = cast(
         dict[str, object],
         json.loads(
-            Path("benchmarks/aia-2026-interim/first-20-regions.json").read_text()
+            Path(
+                "src/enterprise_pdf_rag/resources/aia-first-20-regions.json"
+            ).read_text()
         ),
     )
     entries = [
@@ -205,7 +207,9 @@ def test_reviewed_p18_kpi_cards_become_pending_groups_with_raw_kind_retained() -
     payload = cast(
         dict[str, object],
         json.loads(
-            Path("benchmarks/aia-2026-interim/first-20-regions.json").read_text()
+            Path(
+                "src/enterprise_pdf_rag/resources/aia-first-20-regions.json"
+            ).read_text()
         ),
     )
     catalog_ids = tuple(
@@ -253,7 +257,9 @@ def test_reviewed_p20_sensitivity_panel_becomes_pending_group() -> None:
     payload = cast(
         dict[str, object],
         json.loads(
-            Path("benchmarks/aia-2026-interim/first-20-regions.json").read_text()
+            Path(
+                "src/enterprise_pdf_rag/resources/aia-first-20-regions.json"
+            ).read_text()
         ),
     )
     reviewed = next(

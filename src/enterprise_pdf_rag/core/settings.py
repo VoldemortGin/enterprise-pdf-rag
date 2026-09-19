@@ -13,6 +13,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -53,7 +54,7 @@ def _find_project_root() -> Path:
             return parent
     raise RuntimeError(
         f"未找到仓库根标记文件 .project-root(已从 {cwd} 逐级向上找到文件系统根)。\n"
-        "请在项目树内运行,或设 APP_ROOT_DIR=<仓库根绝对路径> 显式指定根目录。"
+        "请在项目树内运行,或设 APP_ROOT_DIR=<已存在的工作目录绝对路径>。"
     )
 
 
@@ -79,6 +80,12 @@ class Settings(BaseSettings):
     # 运行期可写目录(默认锚定项目根;部署可用 APP_*_DIR 覆盖)
     data_dir: Path = ROOT_DIR / "data"
     log_dir: Path = ROOT_DIR / "logs"
+
+    @field_validator("data_dir", "log_dir")
+    @classmethod
+    def resolve_runtime_directory(cls, value: Path) -> Path:
+        path = value.expanduser()
+        return (path if path.is_absolute() else ROOT_DIR / path).resolve()
 
     @classmethod
     def settings_customise_sources(

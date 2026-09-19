@@ -6,6 +6,8 @@ Python 3.12 / uv 财务 PDF RAG 后端。当前业务范围是**单份真实 AIA
 
 本次实际产物覆盖 **20 页、241 个对象，241 份 IR 和 241 份描述/来源转录**。189 份描述投影具备有限检索资格，其中 180 份仅证明原文转录，9 份仅证明图表标签；独立数值关系资格仍为 0。分类型结果和限制见 [本次验收记录](docs/processing-run-2026-09-19.md)。
 
+本地继续使用 uv；独立的 Python 3.12 环境可直接 `python -m pip install .` 安装完整后端运行依赖，包括 pdfspine 和 SVG renderer。`pdf` / `processing` extras 保留为空兼容别名，无需额外选择。安装后用 `enterprise-pdf-rag serve` 启动已有 API，并通过 `APP_ROOT_DIR` / `APP_DATA_DIR` 指定源码目录以外的工作区与持久数据。Open WebUI 仍是单独安装和隔离的服务，不随本包安装。环境条件、可复制命令及 Databricks 平台区别见 [部署说明](docs/databricks-deployment.md)；本地安装验证不代表已在 Databricks 部署。
+
 ## 处理选定文件
 
 所有命令从仓库根目录运行：
@@ -130,4 +132,4 @@ make fmt                              # 本地安全修复与格式化，会写�
 
 真实 LLM 测试只在大版本或模型调用流程实质变化时显式触发，普通改动使用 transport 替身。来源 ingestion 不需要 LLM；前 20 页的视觉语义加工则使用有预算、可缓存的实际模型请求。已有 `llm-smoke` 仅验证连接；从环境读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`，不读取 `.env`、不打印密钥，也不证明图表质量。本地 embedding/rerank 使用独立配置，未配置时拒绝，不继承云端 LLM。
 
-架构和范围见 [ADR 0001](docs/adr/0001-architecture.md)、[图表链 ADR 0002](docs/adr/0002-figure-pipeline.md)、[UI ADR 0003](docs/adr/0003-open-webui.md)、[真实来源 ADR 0004](docs/adr/0004-aia-source-review.md)、[前 20 页 ADR 0005](docs/adr/0005-first-twenty-pages-processing.md)、[其他视觉 ADR 0006](docs/adr/0006-non-chart-visual-semantics.md)、[PRD v0.2](docs/PRD-v0.2.md)。PDF、密钥、运行产物、虚拟环境与本地 IDE 配置不进入公共仓库。
+架构和范围见 [ADR 0001](docs/adr/0001-architecture.md)、[图表链 ADR 0002](docs/adr/0002-figure-pipeline.md)、[UI ADR 0003](docs/adr/0003-open-webui.md)、[真实来源 ADR 0004](docs/adr/0004-aia-source-review.md)、[前 20 页 ADR 0005](docs/adr/0005-first-twenty-pages-processing.md)、[其他视觉 ADR 0006](docs/adr/0006-non-chart-visual-semantics.md)、[独立安装 ADR 0007](docs/adr/0007-installable-runtime.md)、[PRD v0.2](docs/PRD-v0.2.md)。PDF、密钥、运行产物、虚拟环境与本地 IDE 配置不进入公共仓库。

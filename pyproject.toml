@@ -4,31 +4,35 @@ version = "0.1.0.dev0"
 description = "Evidence-preserving PDF figure ingestion backend."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = ["pydantic>=2,<3", "pydantic-settings[yaml]>=2,<3", "beartype", "jinja2", "fastapi", "uvicorn"]
+dependencies = [
+    "pydantic>=2.12,<3",
+    "pydantic-settings[yaml]>=2.2,<3",
+    "beartype",
+    "jinja2",
+    "fastapi",
+    "uvicorn",
+    "pdfspine==0.10.0",
+    "resvg-py==0.5.0",
+]
 
 [project.scripts]
-# console script:`uv sync` 后可直接 `uv run enterprise_pdf_rag`。
+# console script: supports both uv development and standard pip installations.
 # 这是「从包进入」的正规入口之一(见 standard.md §3),hook 必装上。
 enterprise-pdf-rag = "enterprise_pdf_rag.cli:main"
 
 [project.optional-dependencies]
-# 厂商 SDK 进可选 extras:真正的可选运行时特性,核心/测试不依赖,装了才用
-pdf = ["pdfspine==0.10.0"]
-processing = [
-    "resvg-py==0.5.0",
-]
+# Compatibility aliases: both capabilities are now required default dependencies.
+pdf = []
+processing = []
 
 [dependency-groups]
 # 开发工具不是本包的运行时特性,进 PEP 735 组:裸 `uv sync` 默认装 dev 组
-# pdfspine is installed in development for offline real-parser contract tests.
 dev = [
     "mypy==2.3.0",
     "ruff==0.16.1",
     "pytest",
     "hypothesis",
-    "pdfspine==0.10.0",
     "httpx2>=2.13.0",
-    "resvg-py==0.5.0",
 ]
 
 [build-system]

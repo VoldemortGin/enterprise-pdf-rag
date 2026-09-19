@@ -112,17 +112,11 @@ dependencies = [
     { name = "beartype" },
     { name = "fastapi" },
     { name = "jinja2" },
+    { name = "pdfspine" },
     { name = "pydantic" },
     { name = "pydantic-settings", extra = ["yaml"] },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-pdf = [
-    { name = "pdfspine" },
-]
-processing = [
     { name = "resvg-py" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -130,9 +124,7 @@ dev = [
     { name = "httpx2" },
     { name = "hypothesis" },
     { name = "mypy" },
-    { name = "pdfspine" },
     { name = "pytest" },
-    { name = "resvg-py" },
     { name = "ruff" },
 ]
 
@@ -141,10 +133,10 @@ requires-dist = [
     { name = "beartype" },
     { name = "fastapi" },
     { name = "jinja2" },
-    { name = "pdfspine", marker = "extra == 'pdf'", specifier = "==0.10.0" },
-    { name = "pydantic", specifier = ">=2,<3" },
-    { name = "pydantic-settings", extras = ["yaml"], specifier = ">=2,<3" },
-    { name = "resvg-py", marker = "extra == 'processing'", specifier = "==0.5.0" },
+    { name = "pdfspine", specifier = "==0.10.0" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pydantic-settings", extras = ["yaml"], specifier = ">=2.2,<3" },
+    { name = "resvg-py", specifier = "==0.5.0" },
     { name = "uvicorn" },
 ]
 provides-extras = ["pdf", "processing"]
@@ -154,9 +146,7 @@ dev = [
     { name = "httpx2", specifier = ">=2.13.0" },
     { name = "hypothesis" },
     { name = "mypy", specifier = "==2.3.0" },
-    { name = "pdfspine", specifier = "==0.10.0" },
     { name = "pytest" },
-    { name = "resvg-py", specifier = "==0.5.0" },
     { name = "ruff", specifier = "==0.16.1" },
 ]
 

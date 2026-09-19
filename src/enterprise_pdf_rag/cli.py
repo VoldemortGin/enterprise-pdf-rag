@@ -4,7 +4,11 @@ import argparse
 import sys
 from pathlib import Path
 
+import uvicorn
+from pydantic import BaseModel, ConfigDict, Field
+
 from enterprise_pdf_rag.adapters.aia_ingestion import AIA_OUTPUT, ingest_aia
+from enterprise_pdf_rag.adapters.http.app import create_configured_app
 from enterprise_pdf_rag.adapters.http.document_schemas import DocumentSnapshotResponse
 from enterprise_pdf_rag.adapters.http.schemas import (
     DemoResponse,
@@ -24,9 +28,21 @@ from enterprise_pdf_rag.adapters.runtime import create_runtime
 from enterprise_pdf_rag.figures.models import ExecutionMode
 
 
+class _ServerOptions(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+
+    host: str = Field(min_length=1)
+    port: int = Field(ge=1, le=65535)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="enterprise-pdf-rag")
     commands = parser.add_subparsers(dest="command", required=True)
+    serve = commands.add_parser(
+        "serve", help="Serve the explicitly configured API; no ingestion or model calls"
+    )
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8766)
     commands.add_parser(
         "ingest-aia", help="Persist and review only the selected AIA PDF; no models"
     )
@@ -125,6 +141,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     arguments = parser.parse_args(argv)
     try:
+        if arguments.command == "serve":
+            options = _ServerOptions(host=arguments.host, port=arguments.port)
+            app = create_configured_app()
+            uvicorn.run(app, host=options.host, port=options.port)
+            return 0
         if arguments.command == "index-aia-processing":
             indexed = index_aia_processing(
                 processing_id=arguments.processing_id,

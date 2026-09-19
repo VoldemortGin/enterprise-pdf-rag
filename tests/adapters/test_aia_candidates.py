@@ -14,7 +14,7 @@ from enterprise_pdf_rag.documents.models import AssetRef, TextSidecar, TextSpan
 from enterprise_pdf_rag.figures.models import Verification
 from enterprise_pdf_rag.processing.models import ObjectKind, PageInput
 
-CATALOG = Path("benchmarks/aia-2026-interim/first-20-regions.json")
+CATALOG = Path("src/enterprise_pdf_rag/resources/aia-first-20-regions.json")
 SOURCE_SHA256 = "df902346791b300566761bfcd42bc93bf19e7ba86273dd0cf32d2bb7e9f0870e"
 
 

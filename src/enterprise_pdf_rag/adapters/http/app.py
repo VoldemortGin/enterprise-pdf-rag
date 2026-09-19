@@ -70,11 +70,11 @@ def create_app(*, mode: ExecutionMode) -> FastAPI:
 
 
 def create_configured_app() -> FastAPI:
-    """Uvicorn factory; explicit APP_EXECUTION_MODE=offline-demo is required."""
+    """Load the explicit API profile from external configuration and saved data."""
     configured = get_settings().execution_mode
     if configured == "unconfigured":
         raise ValueError(
-            "Set APP_EXECUTION_MODE explicitly; this milestone supports only offline-demo"
+            "Set APP_EXECUTION_MODE explicitly to aia-source-review or offline-demo"
         )
     if configured == "aia-source-review":
         processing = (
