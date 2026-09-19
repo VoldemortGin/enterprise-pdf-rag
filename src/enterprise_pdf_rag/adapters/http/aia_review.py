@@ -31,10 +31,16 @@ from enterprise_pdf_rag.adapters.http.openai_schemas import (
     ModelInfo,
     ModelList,
 )
+from enterprise_pdf_rag.adapters.http.processing_review import (
+    create_processing_router,
+    processing_summary,
+)
 from enterprise_pdf_rag.adapters.http.webui_gate import (
     AIA_REVIEW_MODEL,
     source_review_page,
 )
+from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
+from enterprise_pdf_rag.adapters.source_publication import validate_processing_source
 from enterprise_pdf_rag.documents.aia import AIA_SPEC
 from enterprise_pdf_rag.documents.models import DocumentSnapshot, DocumentSpec
 
@@ -58,7 +64,10 @@ def _ensure_source(snapshot: DocumentSnapshot, spec: DocumentSpec) -> None:
 
 
 def create_aia_app(
-    store: LocalDocumentStore, *, spec: DocumentSpec = AIA_SPEC
+    store: LocalDocumentStore,
+    *,
+    spec: DocumentSpec = AIA_SPEC,
+    processing: ProcessingStore | None = None,
 ) -> FastAPI:
     snapshot = store.load_current()
     _ensure_source(snapshot, spec)
@@ -68,6 +77,11 @@ def create_aia_app(
     app = FastAPI(
         title="AIA 2026 interim source review — semantics pending", version="0.1.0.dev0"
     )
+    processed = None if processing is None else processing.load_current()
+    if processed is not None and processing is not None:
+        if processed[1].scope.source_manifest_id != snapshot.manifest_id:
+            raise ValueError("Processing belongs to another source snapshot")
+        app.include_router(create_processing_router(store, processing, processed[0]))
 
     @app.exception_handler(ValueError)
     @app.exception_handler(OSError)
@@ -166,8 +180,13 @@ def create_aia_app(
                 422,
                 "Only source review is available; ask 查看当前文件 or 查看第25页. Financial QA and ChartIR are pending",
             )
+        default_processing = page_number == 0 and processed is not None
         if page_number == 0:
-            page_number = manifest.region.page_index + 1
+            page_number = (
+                manifest.region.page_index + 1
+                if processed is None
+                else processed[1].scope.physical_pages[0]
+            )
         if not 1 <= page_number <= len(manifest.pages):
             raise HTTPException(404, "Source page does not exist")
         store.load(snapshot.manifest_id)
@@ -196,6 +215,22 @@ def create_aia_app(
                 "缺口: ChartIR、LLM 描述、图表数值/年份/系列关系的源级验证尚未完成; 未运行 embedding/rerank,不依据片段推导财务结论。",
             )
         )
+        if processed is not None and processing is not None:
+            current = processing.load(processed[0])
+            plan = (
+                None
+                if current.retrieval is None
+                else processing.load_retrieval(current.retrieval)[0]
+            )
+            validate_processing_source(
+                sources=store, artifacts=processing.assets, manifest=current, plan=plan
+            )
+            summary = processing_summary(processed[0], current)
+            if default_processing:
+                lines = [f"**当前文件: {manifest.filename}**", "", summary]
+            else:
+                lines = lines[:-2]
+                lines.extend(("", summary))
         result = CompletionResponse(
             id="chatcmpl-" + uuid4().hex,
             created=int(time()),

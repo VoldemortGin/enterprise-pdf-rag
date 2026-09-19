@@ -8,6 +8,7 @@ from enterprise_pdf_rag.figures.models import (
     ChartIR,
     DescriptionClaim,
     Evidence,
+    EvidenceKind,
     FailureCode,
     FigureError,
     SvgArtifact,
@@ -81,6 +82,26 @@ def validate_svg(svg: SvgArtifact) -> None:
                 FailureCode.INVALID_EVIDENCE,
                 "Source-map text differs from its actual SVG element",
             )
+        observation = (
+            node.tag == "{urn:enterprise-pdf-rag:source-observation-v1}observation"
+        )
+        if observation != (
+            element.evidence_kind is EvidenceKind.SOURCE_TEXT_OBSERVATION
+        ):
+            raise FigureError(
+                FailureCode.INVALID_EVIDENCE,
+                "Source observation is not a native glyph mapping",
+            )
+        if observation and (
+            node.get("source-span-id") != element.source_span_id
+            or element.text_range is None
+            or (node.get("start"), node.get("end"))
+            != tuple(str(value) for value in element.text_range)
+        ):
+            raise FigureError(
+                FailureCode.INVALID_EVIDENCE,
+                "Source observation offsets or identity differ",
+            )
         anchor = element.anchor
         if (
             anchor.source_revision,
@@ -134,6 +155,9 @@ def validate_pair(
     svg: SvgArtifact, chart: ChartIR, description: TextDescription
 ) -> None:
     """Check cited source labels, then cross-check independently produced claims."""
+    for contextual in (chart.title, chart.period):
+        if contextual is not None:
+            _validate_text(svg, contextual)
     for axis in chart.axes:
         _validate_text(svg, axis.label)
         _validate_text(svg, axis.unit)
@@ -186,6 +210,12 @@ def _validate_claim(svg: SvgArtifact, chart: ChartIR, claim: DescriptionClaim) -
             "Claim number, series, category and unit must match one chart point",
         )
     point = candidates[0]
+    period = None if chart.period is None else chart.period.text
+    if claim.period != period:
+        raise FigureError(
+            FailureCode.CONTENT_MISMATCH,
+            "Claim period differs from the chart source scope",
+        )
     if point.value.kind is not ValueKind.EXPLICIT:
         raise FigureError(
             FailureCode.UNSUPPORTED_VALUE,
@@ -196,13 +226,20 @@ def _validate_claim(svg: SvgArtifact, chart: ChartIR, claim: DescriptionClaim) -
         for field in (point.series, point.category, point.unit, point.value)
         for element_id in field.evidence.element_ids
     }
+    if chart.period is not None:
+        required.update(chart.period.evidence.element_ids)
     if not required.issubset(claim.evidence.element_ids):
         raise FigureError(
             FailureCode.INVALID_EVIDENCE,
             "Claim must cite its matched point and all contextual labels",
         )
     numeric_text = claim.text
-    for label in (claim.series, claim.category, claim.unit):
+    for label in (
+        claim.series,
+        claim.category,
+        claim.unit,
+        *((claim.period,) if claim.period is not None else ()),
+    ):
         if label is None or label not in numeric_text:
             raise FigureError(
                 FailureCode.CONTENT_MISMATCH,
@@ -215,6 +252,15 @@ def _validate_claim(svg: SvgArtifact, chart: ChartIR, claim: DescriptionClaim) -
             "Claim text contains a different or additional numeric value",
         )
     sentence = rf"{re.escape(str(claim.series))} for {re.escape(str(claim.category))}: ({_NUMBER.pattern}) {re.escape(str(claim.unit))}\."
+    if (
+        chart.grammar == "donut"
+        and chart.title is not None
+        and chart.title.text == "Distribution Mix"
+        and " distribution share for " in claim.text
+    ):
+        sentence = rf"{re.escape(str(claim.series))} distribution share for {re.escape(str(claim.category))}: ({_NUMBER.pattern}) {re.escape(str(claim.unit))}\."
+    if claim.period is not None:
+        sentence = rf"During {re.escape(claim.period)}, " + sentence
     if re.fullmatch(sentence, _normal(claim.text)) is None:
         raise FigureError(
             FailureCode.CONTENT_MISMATCH,

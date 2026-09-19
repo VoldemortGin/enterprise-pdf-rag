@@ -13,6 +13,11 @@ from enterprise_pdf_rag.adapters.http.schemas import (
 )
 from enterprise_pdf_rag.adapters.pdfspine_document import PdfspineDocumentAdapter
 from enterprise_pdf_rag.adapters.pdfspine_figure import PdfspineFigureParser
+from enterprise_pdf_rag.adapters.processing_runtime import (
+    index_aia_processing,
+    process_aia_layout,
+    process_aia_semantics,
+)
 from enterprise_pdf_rag.adapters.providers import OpenAICompatibleSmoke, load_llm_config
 from enterprise_pdf_rag.adapters.review import write_review
 from enterprise_pdf_rag.adapters.runtime import create_runtime
@@ -24,6 +29,72 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser(
         "ingest-aia", help="Persist and review only the selected AIA PDF; no models"
+    )
+    layout = commands.add_parser(
+        "process-aia-layout",
+        help="Explicitly call the configured model for selected physical pages 1-20; object semantics remain deferred",
+    )
+    layout.add_argument(
+        "--page",
+        type=int,
+        action="append",
+        required=True,
+        help="Physical page 1-20; repeat for multiple pages",
+    )
+    layout.add_argument(
+        "--max-live-calls",
+        type=int,
+        required=True,
+        help="Maximum new layout calls; 0 permits cached responses only",
+    )
+    layout.add_argument(
+        "--timeout",
+        type=float,
+        default=180.0,
+        help="Socket I/O timeout in seconds, at most 180",
+    )
+    layout.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Explicitly allow one immutable retry record for a previously failed identical request",
+    )
+    semantics = commands.add_parser(
+        "process-aia-semantics",
+        help="Process saved first-20 layouts into actual typed IR and independent descriptions; no automatic embedding",
+    )
+    semantics.add_argument("--page", type=int, action="append", required=True)
+    semantics.add_argument("--max-live-calls", type=int, required=True)
+    semantics.add_argument("--timeout", type=float, default=180.0)
+    semantics.add_argument("--retry-failed", action="store_true")
+    semantics.add_argument(
+        "--correct-description-request",
+        action="append",
+        default=[],
+        help="Explicit original request fingerprint for one source-binding correction; at most two, no automatic retry",
+    )
+    semantics.add_argument(
+        "--correct-chart-request",
+        action="append",
+        default=[],
+        help="Explicit original chart fingerprint for one source-binding correction; no automatic retry",
+    )
+    semantics.add_argument(
+        "--qualification-policy",
+        choices=["none", "source-labels-only", "donut"],
+        default="none",
+        help="Explicit qualification policy; never an automatic fallback",
+    )
+    indexing = commands.add_parser(
+        "index-aia-processing",
+        help="Explicitly embed eligible descriptions on the local service, rerank and hydrate one fixed processing snapshot",
+    )
+    indexing.add_argument("--processing-id", required=True)
+    indexing.add_argument("--query", required=True)
+    indexing.add_argument("--limit", type=int, default=5)
+    indexing.add_argument(
+        "--rerank-configuration-id",
+        default="unrecorded",
+        help="Reference to the actual provider configuration evidence; not a quality approval",
     )
     commands.add_parser(
         "llm-smoke",
@@ -54,6 +125,37 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     arguments = parser.parse_args(argv)
     try:
+        if arguments.command == "index-aia-processing":
+            indexed = index_aia_processing(
+                processing_id=arguments.processing_id,
+                query=arguments.query,
+                limit=arguments.limit,
+                rerank_configuration_id=arguments.rerank_configuration_id,
+            )
+            sys.stdout.write(indexed.model_dump_json(indent=2) + "\n")
+            return 0
+        if arguments.command in ("process-aia-layout", "process-aia-semantics"):
+            if arguments.command == "process-aia-layout":
+                summary = process_aia_layout(
+                    physical_pages=tuple(arguments.page),
+                    max_live_calls=arguments.max_live_calls,
+                    timeout=arguments.timeout,
+                    retry_failed=arguments.retry_failed,
+                )
+            else:
+                summary = process_aia_semantics(
+                    physical_pages=tuple(arguments.page),
+                    max_live_calls=arguments.max_live_calls,
+                    timeout=arguments.timeout,
+                    retry_failed=arguments.retry_failed,
+                    qualification_policy=arguments.qualification_policy,
+                    description_corrections=tuple(
+                        arguments.correct_description_request
+                    ),
+                    chart_corrections=tuple(arguments.correct_chart_request),
+                )
+            sys.stdout.write(summary.model_dump_json(indent=2) + "\n")
+            return 0
         if arguments.command == "ingest-aia":
             snapshot = ingest_aia(extractor=PdfspineDocumentAdapter())
             sys.stdout.write(

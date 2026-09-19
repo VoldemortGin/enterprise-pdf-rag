@@ -30,6 +30,11 @@ class ValueKind(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class EvidenceKind(StrEnum):
+    NATIVE_ELEMENT = "native_element"
+    SOURCE_TEXT_OBSERVATION = "source_text_observation"
+
+
 class FailureCode(StrEnum):
     MISSING_CHART = "missing_chart"
     MISSING_ARTIFACT = "missing_artifact"
@@ -106,6 +111,26 @@ class SvgElement:
     element_id: str
     text: str
     anchor: SourceAnchor
+    evidence_kind: EvidenceKind = EvidenceKind.NATIVE_ELEMENT
+    source_span_id: str | None = None
+    text_range: tuple[int, int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.evidence_kind is EvidenceKind.SOURCE_TEXT_OBSERVATION:
+            if (
+                not self.source_span_id
+                or not isinstance(self.text_range, tuple)
+                or len(self.text_range) != 2
+                or not 0 <= self.text_range[0] < self.text_range[1]
+                or self.text_range[1] - self.text_range[0] != len(self.text)
+            ):
+                raise ValueError(
+                    "Source text observations require Unicode [start,end) offsets"
+                )
+        elif self.source_span_id is not None or self.text_range is not None:
+            raise ValueError(
+                "Native SVG elements must not imply an unverified text-span mapping"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +160,7 @@ class SvgArtifact:
 
     @property
     def artifact_id(self) -> str:
-        return content_id("svg-v1", (self,))
+        return content_id("svg-v2", (self,))
 
     @property
     def binding(self) -> SvgBinding:
@@ -166,6 +191,9 @@ class FigureQualification:
     source: SourceAnchor
     fields: tuple[FieldOccurrence, ...]
     method: str
+    execution_mode: ExecutionMode = ExecutionMode.OFFLINE_DEMO
+    source_geometry_refs: tuple[str, ...] = ()
+    semantic_scope: str = "explicit-labels"
 
     def __post_init__(self) -> None:
         if not isinstance(self.fields, tuple) or not self.fields:
@@ -173,6 +201,12 @@ class FigureQualification:
         paths = tuple(field.field_path for field in self.fields)
         if len(set(paths)) != len(paths) or not self.method.strip():
             raise ValueError("qualification requires unique fields and its method")
+        if not isinstance(self.source_geometry_refs, tuple):
+            raise ValueError("Geometry references must be immutable")
+
+    @property
+    def artifact_id(self) -> str:
+        return content_id("qualification-v1", (self,))
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +257,18 @@ class ChartAxis:
 
 
 @dataclass(frozen=True, slots=True)
+class ChartMark:
+    """A located grammar hypothesis, not an independently validated relation."""
+
+    mark_id: str
+    kind: str
+    bbox: tuple[float, float, float, float]
+    color: str | None
+    point_ids: tuple[str, ...]
+    evidence: Evidence
+
+
+@dataclass(frozen=True, slots=True)
 class ChartIR:
     binding: SvgBinding
     grammar: str
@@ -231,14 +277,21 @@ class ChartIR:
     producer: str
     verification: Verification
     execution_mode: ExecutionMode = ExecutionMode.OFFLINE_DEMO
+    title: TextField | None = None
+    period: TextField | None = None
+    marks: tuple[ChartMark, ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.axes, tuple) or not isinstance(self.points, tuple):
+        if (
+            not isinstance(self.axes, tuple)
+            or not isinstance(self.points, tuple)
+            or not isinstance(self.marks, tuple)
+        ):
             raise ValueError("chart members must be immutable tuples")
 
     @property
     def artifact_id(self) -> str:
-        return content_id("chart-v1", (self,))
+        return content_id("chart-v2", (self,))
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +302,7 @@ class DescriptionClaim:
     category: str | None = None
     unit: str | None = None
     value: Decimal | None = None
+    period: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,7 +327,17 @@ class TextDescription:
 
     @property
     def artifact_id(self) -> str:
-        return content_id("description-v1", (self,))
+        return content_id("description-v2", (self,))
+
+
+@dataclass(frozen=True, slots=True)
+class QualifiedFigurePair:
+    chart: ChartIR
+    description: TextDescription
+    receipt: FigureQualification
+    raw_chart_id: str
+    raw_description_id: str
+    excluded_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,10 +363,11 @@ class FigureBundle:
     chart_ir_artifact_id: str
     description_id: str
     embedding_key: str
+    qualification_id: str | None = None
 
     @property
     def bundle_id(self) -> str:
-        return content_id("bundle-v1", (self,))
+        return content_id("bundle-v2", (self,))
 
 
 @dataclass(frozen=True, slots=True)

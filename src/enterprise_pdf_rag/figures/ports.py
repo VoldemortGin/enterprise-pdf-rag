@@ -9,6 +9,7 @@ from enterprise_pdf_rag.figures.models import (
     FigureBundle,
     FigureHit,
     FigureQualification,
+    QualifiedFigurePair,
     SvgArtifact,
     TextDescription,
 )
@@ -17,6 +18,13 @@ from enterprise_pdf_rag.figures.models import (
 @runtime_checkable
 class FigureQualificationProvider(Protocol):
     def qualification_for(self, svg: SvgArtifact) -> FigureQualification | None: ...
+
+
+@runtime_checkable
+class ScopedFigureQualificationProvider(Protocol):
+    def qualify_pair(
+        self, svg: SvgArtifact, chart: ChartIR, description: TextDescription
+    ) -> QualifiedFigurePair: ...
 
 
 @runtime_checkable

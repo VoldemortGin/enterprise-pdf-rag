@@ -16,6 +16,16 @@ from enterprise_pdf_rag.adapters.http.openai_schemas import (
     CompletionResponse,
     ModelList,
 )
+from enterprise_pdf_rag.adapters.http.processing_review import (
+    ProcessingContextRequest,
+    ProcessingContextResponse,
+    ProcessingSearchResponse,
+)
+from enterprise_pdf_rag.adapters.http.processing_schemas import (
+    ProcessingSearchRequest,
+    ProcessingSnapshotResponse,
+    ProcessingStatusResponse,
+)
 from enterprise_pdf_rag.adapters.http.schemas import (
     ContextRequest,
     ContextResponse,
@@ -46,6 +56,14 @@ CONTRACTS: dict[str, tuple[type[BaseModel], ...]] = {
         PageTextResponse,
     ),
     "openai-demo-v1": (ChatRequest, ModelList, CompletionResponse, CompletionChunk),
+    "aia-processing-v1": (
+        ProcessingSnapshotResponse,
+        ProcessingStatusResponse,
+        ProcessingSearchRequest,
+        ProcessingSearchResponse,
+        ProcessingContextRequest,
+        ProcessingContextResponse,
+    ),
 }
 
 

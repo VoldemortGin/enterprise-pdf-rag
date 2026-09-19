@@ -16,6 +16,8 @@ from enterprise_pdf_rag.adapters.http.schemas import (
     SearchRequest,
     SearchResponse,
 )
+from enterprise_pdf_rag.adapters.processing_runtime import PROCESSING_OUTPUT
+from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
 from enterprise_pdf_rag.adapters.runtime import create_runtime
 from enterprise_pdf_rag.core.settings import get_settings
 from enterprise_pdf_rag.figures.models import ExecutionMode, FailureCode, FigureError
@@ -75,5 +77,10 @@ def create_configured_app() -> FastAPI:
             "Set APP_EXECUTION_MODE explicitly; this milestone supports only offline-demo"
         )
     if configured == "aia-source-review":
-        return create_aia_app(LocalDocumentStore(AIA_OUTPUT))
+        processing = (
+            ProcessingStore(PROCESSING_OUTPUT)
+            if (PROCESSING_OUTPUT / "current-processing").is_file()
+            else None
+        )
+        return create_aia_app(LocalDocumentStore(AIA_OUTPUT), processing=processing)
     return create_app(mode=ExecutionMode(configured))

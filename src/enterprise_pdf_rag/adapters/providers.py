@@ -22,6 +22,21 @@ class ProviderConfigurationError(ValueError):
 class ProviderRequestError(ValueError):
     """Sanitized provider failure; no response body, headers or key is retained."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        category: Literal[
+            "http", "timeout", "connection", "response_limit", "invalid_response"
+        ] = "invalid_response",
+        exception_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.category = category
+        self.exception_type = exception_type
+
 
 class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -40,6 +55,7 @@ class LLMConfig(BaseModel):
 class LocalModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     purpose: Literal["embedding", "rerank"]
+    api_key: SecretStr
     base_url: str
     model: str
 
@@ -72,6 +88,13 @@ def _base_url(value: str, *, name: str, https_only: bool = False) -> str:
     return value.rstrip("/")
 
 
+def _loopback_base_url(value: str, *, name: str) -> str:
+    base = _base_url(value, name=name)
+    if urlsplit(base).hostname not in {"127.0.0.1", "::1", "localhost"}:
+        raise ProviderConfigurationError(f"Invalid loopback service base URL: {name}")
+    return base
+
+
 def load_llm_config(environment: Mapping[str, str] | None = None) -> LLMConfig:
     env = os.environ if environment is None else environment
     key = _required(env, "OPENAI_API_KEY")
@@ -88,9 +111,14 @@ def load_local_model_config(
 ) -> LocalModelConfig:
     env = os.environ if environment is None else environment
     prefix = "EMBEDDING" if purpose == "embedding" else "RERANK"
-    base = _base_url(_required(env, f"{prefix}_BASE_URL"), name=f"{prefix}_BASE_URL")
+    base = _loopback_base_url(
+        _required(env, f"{prefix}_BASE_URL"), name=f"{prefix}_BASE_URL"
+    )
     model = _required(env, f"{prefix}_MODEL")
-    return LocalModelConfig(purpose=purpose, base_url=base, model=model)
+    key = _required(env, f"{prefix}_API_KEY")
+    return LocalModelConfig(
+        purpose=purpose, api_key=SecretStr(key), base_url=base, model=model
+    )
 
 
 @runtime_checkable
@@ -116,15 +144,41 @@ def _send_once(url: str, *, api_key: str, payload: bytes, timeout: float) -> byt
         response = connection.getresponse()
         if response.status != 200:
             raise ProviderRequestError(
-                f"Provider returned HTTP {response.status}; no retry performed"
+                f"Provider returned HTTP {response.status}; no retry performed",
+                status=response.status,
+                category="http",
             )
         body = response.read(1_048_577)
         if len(body) > 1_048_576:
-            raise ProviderRequestError("Provider response exceeded the size limit")
+            raise ProviderRequestError(
+                "Provider response exceeded the size limit", category="response_limit"
+            )
         return body
-    except (OSError, HTTPException):
+    except TimeoutError:
         raise ProviderRequestError(
-            "Provider connection failed or timed out; no retry performed"
+            "Provider connection timed out; no retry performed",
+            category="timeout",
+            exception_type="TimeoutError",
+        ) from None
+    except (OSError, HTTPException) as error:
+        exception_type = type(error).__name__
+        if exception_type not in {
+            "SSLError",
+            "SSLCertVerificationError",
+            "ConnectionRefusedError",
+            "ConnectionResetError",
+            "RemoteDisconnected",
+            "gaierror",
+            "OSError",
+            "HTTPException",
+        }:
+            exception_type = (
+                "HTTPException" if isinstance(error, HTTPException) else "OSError"
+            )
+        raise ProviderRequestError(
+            "Provider connection failed; no retry performed",
+            category="connection",
+            exception_type=exception_type,
         ) from None
     finally:
         connection.close()

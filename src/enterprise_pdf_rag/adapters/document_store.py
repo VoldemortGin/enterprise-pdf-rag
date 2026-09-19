@@ -59,6 +59,10 @@ class LocalDocumentStore:
             raise ValueError("Stored artifact length mismatch")
         return data
 
+    def read_content(self, digest: str) -> bytes:
+        """Read an immutable manifest/cache object identified by its actual digest."""
+        return self._read_digest(digest)
+
     def publish(self, manifest: DocumentManifest) -> str:
         for ref in manifest_assets(manifest):
             self.get(ref)

@@ -1,8 +1,10 @@
 # enterprise-pdf-rag
 
-Python 3.12 / uv 财务 PDF RAG 后端。当前可运行的业务入口是**单份真实 AIA 2026 中期业绩演示报告的来源 ingestion 与审阅**：保存原始 PDF、全部 71 页的原生 SVG 和文本位置，提供逐页浏览与第 25 页股息图选区。
+Python 3.12 / uv 财务 PDF RAG 后端。当前业务范围是**单份真实 AIA 2026 中期业绩演示报告的前 20 页加工与证据审阅**。原始 PDF、全部 71 页的原生 SVG 和文本位置作为来源缓存保存；语义处理只选择物理第 1–20 页。
 
-这是 AIA Group 报告。ChartIR、LLM 图表描述、文字与 SVG 元素的对应关系、视觉完整性仍为 **pending**；当前界面不提供已验证的财务问答，也未运行真实 embedding/rerank。`text.json` 是 pdfspine 原文观测，不能当作 LLM 描述或 embedding 输入。
+这是 AIA Group 报告。页面布局、typed IR、独立描述和资格回执分别保存；模型产物初始为 **pending**，成功保存不等于独立验证。只有逐字原文投影或具有完整字段资格的描述可以进入真实本地 embedding；ChartIR 和 SVG 不进入 embedding。`text.json` 仍是 pdfspine 原文观测。每页/对象是否已完成、失败或尚未运行，以处理 manifest 和实际文件为准。
+
+本次实际产物覆盖 **20 页、241 个对象，241 份 IR 和 241 份描述/来源转录**。189 份描述投影具备有限检索资格，其中 180 份仅证明原文转录，9 份仅证明图表标签；独立数值关系资格仍为 0。分类型结果和限制见 [本次验收记录](docs/processing-run-2026-09-19.md)。
 
 ## 处理选定文件
 
@@ -23,12 +25,46 @@ uv run --locked enterprise-pdf-rag ingest-aia
 | `review.html` | 71 页导航与第 25 页重点选区 |
 | `pages/page-001.html` … `page-071.html` | 每页原生 SVG、原文及 bbox、前后页导航 |
 | `text.json` | 全 71 页 pdfspine 原文观测，含源 SHA、物理页号与文本位置 |
-| `chart-ir.status.json` / `description.status.json` | 尚未生成的语义产物状态；`pending`、`artifact_id: null` |
+| `chart-ir.status.json` / `description.status.json` | 早期全文件来源审阅的状态；不是前 20 页处理结果 |
+| `pages-001-020/review.html` | 当前前 20 页处理批次入口 |
+| `pages-001-020/runs/<processing-id>/page-NNN/` | 原始/修正布局、Canonical、逐对象 SVG、真实 IR/description/raw/诊断 |
+| `pages-001-020/current-processing` | 本地当前处理 manifest；不等于生产发布 |
 | `objects/sha256/<digest>` | 不可变、内容寻址的 PDF/SVG/text sidecar/manifest |
 | `current-manifest` | 本地当前完整 manifest 的标识 |
 | `attempts/*.json` | 单独保存运行时间、成功/失败与诊断，不参与来源身份 |
 
 对象读取会校验摘要和长度；同址内容冲突、缺失和跨页引用均拒绝。页级和选区侧车绑定同一源文件。选区保留原生 SVG 子树不等于证明视觉等价：第 25 页 SVG 的底部红色基线比 PDF 渲染细，详情在审阅页和 manifest 的诊断中。
+
+## 前 20 页处理
+
+模型调用仅由显式命令启动，普通 API/审阅不会自动运行推断。环境须独立提供 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`；不读取 `.env`，不写入凭证。示例只处理第 18 页，`--page` 可重复选择物理页 1–20：
+
+```sh
+# 0 = 只复用已有模型缓存，不发新请求
+uv run --locked enterprise-pdf-rag process-aia-layout --page 18 --max-live-calls 0
+uv run --locked enterprise-pdf-rag process-aia-semantics --page 18 --max-live-calls 0
+# 显式的有限标签资格；不代表数值/期间/系列关系已验证
+uv run --locked enterprise-pdf-rag process-aia-semantics --page 18 --max-live-calls 0 \
+  --qualification-policy source-labels-only
+# 只有明确授权新模型调用时才使用正预算；失败不自动重试
+```
+
+源观察、原始布局和带规则来源的修正布局分别存储；图表与其他视觉对象直接读取同一 SVG 派生视图，独立生成 typed IR 和自然语言，互不把另一分支作为输入。单支失败保留另一支及诊断。Text/List/Group 的逐字转录资格只证明原文，不能背书金融关系。原生 SVG 的视觉完整性仍独立为 pending。
+
+`source-labels-only` 仅索引独立描述中逐字匹配单个来源 occurrence、且不含数字的标签。检索回填的图表投影把数值、期间、轴和关系保持 unknown；完整原始 ChartIR 仍可单独审阅。标签资格与数值 QA 资格分别报告，精确财务问题不会凭标签或原文数字得到放行。
+
+若模型回写的来源摘要错误，旧响应作为拒绝产物保存，不修改它来制造通过。显式 `--correct-description-request <原请求fingerprint>` 或 `--correct-chart-request <原请求fingerprint>` 可在预算内安排一次同源修正请求；先验证旧缓存确有该错误，新请求和旧请求分别留存，成功与失败均缓存，没有自动循环重试。
+
+固定某个已处理 manifest 后，可以显式运行本地检索验收：
+
+```sh
+uv run --locked enterprise-pdf-rag index-aia-processing \
+  --processing-id <processing-id> --query "Distribution Mix chart" --limit 5
+```
+
+该命令要求独立的 `EMBEDDING_BASE_URL/MODEL/API_KEY` 和 `RERANK_BASE_URL/MODEL/API_KEY`，仅允许本机回环服务；远端模型经项目管理的 SSH 隧道接入。`scripts/with_local_models.py` 可把运行时读取的服务 key 仅传给子进程，具体主机配置不入库。不会继承云端 LLM key 或回退为 hash embedding。向量、描述、IR、源 SVG、资格和原始两支属于同一固定检索 snapshot，任何缺失或失配都拒绝。
+
+每次验收另存 `retrieval-evaluations/<内容标识>/` 下的 `retrieval-example.json` 和 `retrieval-validation.json`，记录模型配置来源、维度、完整召回候选、cosine/重排分数、命中对象的审阅路径和金融 guard 检查。早期直接放在 run 目录的失败记录保留，不被后续验收覆盖。`coverage.json` 分开统计 IR/描述保存、仅转录资格、仅标签资格与数值关系资格；某个字段 unavailable 不会被总对象数量掩盖。
 
 ## 本地 Open WebUI
 
@@ -41,7 +77,7 @@ uv run --locked python scripts/webui_preview.py status
 uv run --locked python scripts/webui_preview.py stop
 ```
 
-打开 [Open WebUI](http://127.0.0.1:8767)，选择 `AIA 2026 中期业绩 — 原文审阅 / 语义待验证`，输入 `查看当前文件` 或 `查看第25页`。API 在 `127.0.0.1:8766`；[来源浏览](http://127.0.0.1:8766/v1/aia/review) 提供原始资产与逐页入口。回答固定到已保存的 manifest，不调用模型、不使用合成数值回退。
+打开 [Open WebUI](http://127.0.0.1:8767)，选择 `AIA 2026 中期业绩 — 原文审阅 / 语义待验证`，输入 `查看当前文件` 或 `查看第25页`。API 在 `127.0.0.1:8766`；[来源浏览](http://127.0.0.1:8766/v1/aia/review) 提供原始资产与逐页入口。回答固定到已保存的 manifest，不调用模型、不使用合成数值回退。已有处理批次时，`查看当前文件` 显示实际处理统计并链接前 20 页产物；71 页来源浏览仍独立保留。
 
 Open WebUI 的内置上传、PDF 解析、RAG、工具和后台自动生成被部署边界阻断。厂商进程使用私有数据库、静态资产、缓存和最小环境，拿不到上游 API key。默认业务 profile 是 `aia-source-review`。启动前需完成上述真实文件 ingestion；缺源资产会失败，不会自动切 demo。
 
@@ -55,7 +91,10 @@ Open WebUI 的内置上传、PDF 解析、RAG、工具和后台自动生成被�
 - `GET /v1/aia/review`：逐页来源审阅。
 - `GET /v1/aia/pages/page-001.html`：单页 SVG 与原文；页面号支持 001–071。
 - `GET /v1/aia/source.pdf`、`GET /v1/aia/text.json`：同一来源的完整 PDF 和原文侧车导出。
-- `GET /v1/models`、`POST /v1/chat/completions`：受限原文审阅，支持非流式与 SSE。
+- `GET /v1/models`、`POST /v1/chat/completions`：受限原文/处理状态审阅，支持非流式与 SSE。
+- `GET /v1/processing/status`、`GET /v1/processing/manifest`：固定处理批次的实际状态和完整依赖。
+- `GET /v1/processing/review/review.html`：本批次逐对象 SVG / IR / 描述 / 诊断。
+- `POST /v1/processing/search`、`POST /v1/processing/context`：固定 snapshot 的描述检索与无模型证据回填；缺索引/服务配置明确拒绝。
 
 未知模型、越界页、错 snapshot、缺源证据或财务推断请求均明确拒绝。已有持久源资产、不可变 manifest 和本地原子指针；生产级多存储 CAS 发布、ACL/撤回、并发调度与完整财务 QA 尚未实现。
 
@@ -69,7 +108,7 @@ uv run --locked enterprise-pdf-rag demo --mode offline-demo --output data/output
 uv run --locked python scripts/webui_preview.py start --profile offline-demo
 ```
 
-这个独立测试链覆盖同 SVG 的 ChartIR/description 配对、仅 description 的 demo token-hash embedding、固定 snapshot 回填和字段证据。真实 embedding/ChartIR 描述接线尚未完成；hash 向量不代表语义检索。保守的单页提取命令仍保留：
+这个独立测试链覆盖同 SVG 的 ChartIR/description 配对、仅 description 的 demo token-hash embedding、固定 snapshot 回填和字段证据。这一合成链与真实 AIA 处理/本地模型配置分离；hash 向量不代表语义检索。保守的单页提取命令仍保留：
 
 ```sh
 uv run --locked enterprise-pdf-rag extract \
@@ -87,6 +126,6 @@ make fmt                              # 本地安全修复与格式化，会写�
 
 重大改动后和阶段收尾必须运行完整 `./ci.sh`：Ruff、strict mypy、纯领域架构、版本化 schema、文档漂移、单元及离线集成测试，warnings 当作错误。测试不连接网络；真实语料测试在本地样本存在时执行，公共仓库不包含 PDF。协议与失败契约仍有独立小型离线 fixtures。
 
-真实 LLM 测试只在大版本或模型调用流程实质变化时显式触发，普通改动使用 transport 替身。本轮来源 ingestion 不需要 LLM。已有 `llm-smoke` 仅验证连接；从环境读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`，不读取 `.env`、不打印密钥，也不证明图表质量。本地 embedding/rerank 使用独立配置，未配置时拒绝，不继承云端 LLM。
+真实 LLM 测试只在大版本或模型调用流程实质变化时显式触发，普通改动使用 transport 替身。来源 ingestion 不需要 LLM；前 20 页的视觉语义加工则使用有预算、可缓存的实际模型请求。已有 `llm-smoke` 仅验证连接；从环境读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`，不读取 `.env`、不打印密钥，也不证明图表质量。本地 embedding/rerank 使用独立配置，未配置时拒绝，不继承云端 LLM。
 
-架构和范围见 [ADR 0001](docs/adr/0001-architecture.md)、[图表链 ADR 0002](docs/adr/0002-figure-pipeline.md)、[UI ADR 0003](docs/adr/0003-open-webui.md)、[真实来源 ADR 0004](docs/adr/0004-aia-source-review.md)、[PRD v0.2](docs/PRD-v0.2.md)。PDF、密钥、运行产物、虚拟环境与本地 IDE 配置不进入公共仓库。
+架构和范围见 [ADR 0001](docs/adr/0001-architecture.md)、[图表链 ADR 0002](docs/adr/0002-figure-pipeline.md)、[UI ADR 0003](docs/adr/0003-open-webui.md)、[真实来源 ADR 0004](docs/adr/0004-aia-source-review.md)、[前 20 页 ADR 0005](docs/adr/0005-first-twenty-pages-processing.md)、[其他视觉 ADR 0006](docs/adr/0006-non-chart-visual-semantics.md)、[PRD v0.2](docs/PRD-v0.2.md)。PDF、密钥、运行产物、虚拟环境与本地 IDE 配置不进入公共仓库。

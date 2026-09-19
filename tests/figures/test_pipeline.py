@@ -31,6 +31,7 @@ from enterprise_pdf_rag.figures.models import (
     Verification,
 )
 from enterprise_pdf_rag.figures.service import FiguresService
+from enterprise_pdf_rag.figures.validation import validate_pair
 
 
 def figure() -> SvgArtifact:
@@ -55,6 +56,36 @@ def evidence(*ids: str) -> Evidence:
     return Evidence(
         ids, Verification.VERIFIED, Confidence(None, "fixture exact labels")
     )
+
+
+def test_numeric_claim_binds_period_and_rejects_extra_conclusions() -> None:
+    base = figure()
+    svg = replace(
+        base,
+        svg=base.svg.replace("</svg>", '<text id="period">1H26</text></svg>'),
+        elements=(*base.elements, SvgElement("period", "1H26", base.source)),
+    )
+    chart = replace(
+        Extractor().extract(svg), period=TextField("1H26", evidence("period"))
+    )
+    old = Describer().generate(svg)
+    claim = replace(
+        old.claims[0],
+        text="During 1H26, Revenue for 2024: 42 USD million.",
+        period="1H26",
+        evidence=evidence("series", "category", "unit", "value", "period"),
+    )
+    description = replace(old, claims=(claim,))
+    validate_pair(svg, chart, description)
+    for changed in (
+        replace(claim, period=None),
+        replace(claim, period="1H25"),
+        replace(
+            claim, text=claim.text + " Agency is market-leading due to policy changes."
+        ),
+    ):
+        with pytest.raises(FigureError):
+            validate_pair(svg, chart, replace(description, claims=(changed,)))
 
 
 class FixtureQualifier:

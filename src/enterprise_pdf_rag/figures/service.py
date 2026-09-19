@@ -12,6 +12,7 @@ from enterprise_pdf_rag.figures.models import (
     FigureError,
     FigureHit,
     FigureQualification,
+    QualifiedFigurePair,
     ReasoningView,
     SvgArtifact,
     TextDescription,
@@ -26,6 +27,7 @@ from enterprise_pdf_rag.figures.ports import (
     EmbeddingPort,
     FigureQualificationProvider,
     FigureRepository,
+    ScopedFigureQualificationProvider,
 )
 from enterprise_pdf_rag.figures.validation import validate_pair, validate_svg
 
@@ -41,7 +43,7 @@ class FiguresService:
         repository: FigureRepository,
         index: DescriptionIndex,
         *,
-        qualifier: FigureQualificationProvider,
+        qualifier: FigureQualificationProvider | ScopedFigureQualificationProvider,
         mode: ExecutionMode,
     ) -> None:
         self.extractor = extractor
@@ -53,7 +55,15 @@ class FiguresService:
         self.mode = mode
 
     def build(self, svg: SvgArtifact, *, snapshot_id: str) -> FigureBundle:
-        self._check_svg_qualification(svg)
+        if self.mode is ExecutionMode.OFFLINE_DEMO:
+            self._check_svg_qualification(svg)
+        elif not isinstance(self.qualifier, ScopedFigureQualificationProvider):
+            raise FigureError(
+                FailureCode.EXECUTION_MODE,
+                "Production requires an independent scoped qualifier",
+            )
+        else:
+            validate_svg(svg)
         chart = self.extractor.extract(svg)
         description = self.describer.generate(svg)
         if chart is None:
@@ -70,7 +80,8 @@ class FiguresService:
         *,
         snapshot_id: str,
     ) -> FigureBundle:
-        self._check_qualification(svg, chart, description)
+        qualified = self.qualify_pair(svg, chart, description)
+        chart, description = qualified.chart, qualified.description
         if chart.binding != svg.binding or description.binding != svg.binding:
             raise FigureError(
                 FailureCode.BINDING_MISMATCH,
@@ -97,6 +108,9 @@ class FiguresService:
             chart.artifact_id,
             description.artifact_id,
             key,
+            qualified.receipt.artifact_id
+            if self.mode is ExecutionMode.PRODUCTION
+            else None,
         )
         self.repository.save(bundle, svg, chart, description)
         hit = FigureHit(
@@ -113,11 +127,83 @@ class FiguresService:
         self.index.add(DescriptionIndexRecord(hit, embedding))
         return bundle
 
-    def _check_svg_qualification(self, svg: SvgArtifact) -> FigureQualification:
-        if self.mode is ExecutionMode.PRODUCTION:
+    def qualify_pair(
+        self, svg: SvgArtifact, chart: ChartIR, description: TextDescription
+    ) -> QualifiedFigurePair:
+        """Qualify immutable projections without embedding or repository writes."""
+        if chart.binding != svg.binding or description.binding != svg.binding:
+            raise FigureError(
+                FailureCode.BINDING_MISMATCH,
+                "Both branches must bind exactly the same source SVG",
+            )
+        if (
+            chart.execution_mode is not self.mode
+            or description.execution_mode is not self.mode
+        ):
             raise FigureError(
                 FailureCode.EXECUTION_MODE,
-                "Production source qualification is not implemented in this offline vertical slice",
+                "Artifact mode differs from the requested qualification mode",
+            )
+        if any(
+            status is Verification.REJECTED
+            for status in (
+                svg.verification,
+                chart.verification,
+                description.verification,
+                *(evidence.verification for _, evidence in _chart_evidence(chart)),
+                *(claim.evidence.verification for claim in description.claims),
+            )
+        ):
+            raise FigureError(
+                FailureCode.UNVERIFIED,
+                "Rejected fields or claims cannot be promoted by another stage",
+            )
+        if self.mode is ExecutionMode.PRODUCTION:
+            if not isinstance(self.qualifier, ScopedFigureQualificationProvider):
+                raise FigureError(
+                    FailureCode.EXECUTION_MODE,
+                    "Production requires an independent scoped source qualifier",
+                )
+            validate_svg(svg)
+            qualified = self.qualifier.qualify_pair(svg, chart, description)
+            if (
+                qualified.raw_chart_id != chart.artifact_id
+                or qualified.raw_description_id != description.artifact_id
+                or not qualified.receipt.source_geometry_refs
+            ):
+                raise FigureError(
+                    FailureCode.INVALID_EVIDENCE,
+                    "Qualified projection lineage or geometry receipt is incomplete",
+                )
+        else:
+            qualified = QualifiedFigurePair(
+                chart,
+                description,
+                self._check_svg_qualification(svg),
+                chart.artifact_id,
+                description.artifact_id,
+            )
+        if (
+            qualified.chart.binding != svg.binding
+            or qualified.description.binding != svg.binding
+        ):
+            raise FigureError(
+                FailureCode.BINDING_MISMATCH,
+                "Qualified projections changed source bindings",
+            )
+        self._check_qualification(
+            svg, qualified.chart, qualified.description, qualified.receipt
+        )
+        validate_pair(svg, qualified.chart, qualified.description)
+        return qualified
+
+    def _check_svg_qualification(self, svg: SvgArtifact) -> FigureQualification:
+        if self.mode is ExecutionMode.PRODUCTION or not isinstance(
+            self.qualifier, FigureQualificationProvider
+        ):
+            raise FigureError(
+                FailureCode.EXECUTION_MODE,
+                "This source qualification contract is limited to offline fixtures",
             )
         if svg.verification is not Verification.VERIFIED:
             raise FigureError(
@@ -137,9 +223,21 @@ class FiguresService:
         return qualification
 
     def _check_qualification(
-        self, svg: SvgArtifact, chart: ChartIR, description: TextDescription
+        self,
+        svg: SvgArtifact,
+        chart: ChartIR,
+        description: TextDescription,
+        qualification: FigureQualification,
     ) -> None:
-        qualification = self._check_svg_qualification(svg)
+        if (
+            qualification.binding != svg.binding
+            or qualification.source != svg.source
+            or qualification.execution_mode is not self.mode
+        ):
+            raise FigureError(
+                FailureCode.INVALID_EVIDENCE,
+                "Receipt is not scoped to the exact source and execution mode",
+            )
         if (
             chart.execution_mode is not self.mode
             or description.execution_mode is not self.mode
@@ -248,7 +346,19 @@ class FiguresService:
                 FailureCode.BINDING_MISMATCH,
                 "Resolved dependencies use different SVG bindings",
             )
-        self._check_qualification(svg, chart, description)
+        qualified = self.qualify_pair(svg, chart, description)
+        if (
+            qualified.chart != chart
+            or qualified.description != description
+            or (
+                self.mode is ExecutionMode.PRODUCTION
+                and bundle.qualification_id != qualified.receipt.artifact_id
+            )
+        ):
+            raise FigureError(
+                FailureCode.INVALID_EVIDENCE,
+                "Stored qualified projection or receipt changed after snapshot publication",
+            )
         validate_pair(svg, chart, description)
         if (
             chart.grammar == "unknown"
@@ -273,6 +383,10 @@ class FiguresService:
 
 def _chart_evidence(chart: ChartIR) -> tuple[tuple[str, Evidence], ...]:
     items: list[tuple[str, Evidence]] = []
+    for name, field in (("title", chart.title), ("period", chart.period)):
+        if field is not None:
+            items.append((name, field.evidence))
+    items.extend((f"marks.{mark.mark_id}", mark.evidence) for mark in chart.marks)
     for axis in chart.axes:
         items.extend(
             (

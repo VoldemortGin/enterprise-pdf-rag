@@ -200,3 +200,60 @@ def test_source_profile_refuses_financial_qa_and_wrong_snapshot(
                 assert "text/event-stream" not in response.headers["content-type"]
 
     asyncio.run(exercise())
+
+
+def test_default_chat_shows_real_processing_status_and_links_not_old_focus_page(
+    prepared_source: tuple[LocalDocumentStore, DocumentSpec],
+) -> None:
+    from enterprise_pdf_rag.adapters.aia_processing import ProcessingPipeline
+    from enterprise_pdf_rag.adapters.processing_export import export_processing_review
+    from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
+    from enterprise_pdf_rag.processing.models import PageInput, PagePartition
+
+    store, spec = prepared_source
+
+    class Partitioner:
+        fingerprint = "test-layout"
+
+        def partition(self, page: PageInput) -> PagePartition:
+            return PagePartition(
+                "layout-v1",
+                page.source_manifest_id,
+                page.source_sha256,
+                page.page_index,
+                self.fingerprint,
+                (),
+                tuple(span.span_id for span in page.text.spans),
+                ("test has no visual objects",),
+            )
+
+    outputs = ProcessingStore(store.root.parent / "processing")
+    processing_id, _ = ProcessingPipeline(store, outputs, Partitioner(), None).run(
+        store.load_current().manifest_id, selected_page_indices=(0,)
+    )
+    export_processing_review(store, outputs, processing_id)
+
+    async def exercise() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(
+                app=create_aia_app(store, spec=spec, processing=outputs)
+            ),
+            base_url="http://test",
+        ) as client:
+            response = await client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "aia-2026-interim-source-review-v1",
+                    "messages": [{"role": "user", "content": "查看当前文件"}],
+                },
+            )
+            assert response.status_code == 200
+            text = response.json()["choices"][0]["message"]["content"]
+            assert "typed IR" in text and "0 份" in text
+            assert "/v1/processing/review/review.html" in text
+            assert "原文片段" not in text
+            assert (await client.get("/v1/processing/status")).json()[
+                "processing_id"
+            ] == processing_id
+
+    asyncio.run(exercise())

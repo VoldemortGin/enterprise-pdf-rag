@@ -2,11 +2,13 @@
 
 ## 当前范围
 
-默认界面用于审阅唯一选定的 AIA Group 2026 中期业绩演示文稿。它显示 pdfspine 保存的原始 PDF、71 页 native SVG 与文字观测，并固定到同一份不可变 manifest。当前没有 ChartIR、LLM 描述或 embedding；图表语义、文字到 SVG 元素的对应关系和视觉完整性均为 `pending`。界面不会据这些观测回答财务问题。
+默认界面用于审阅唯一选定的 AIA Group 2026 中期业绩演示文稿。来源层显示 pdfspine 保存的原始 PDF、71 页 native SVG 与文字观测，并固定到同一份不可变 manifest。处理层仅覆盖物理第 1–20 页：241 个对象均已保存 typed IR 和独立描述或逐字原文 projection，其中 180 个来源转录和 9 个无数字图表标签可以进入 description-only 检索；图表数值关系资格仍为 0。其余推断保持 `pending`，界面不会把标签命中当作已验证财务答案。
 
 | 部分 | 状态 | 已验证范围 |
 | --- | --- | --- |
 | AIA 来源 ingestion | 已实跑 | 固定 SHA-256、71 页完整覆盖、原 PDF、native SVG、文字 sidecar、第 25 页选区和 pending 状态文件已落盘 |
+| 物理第 1–20 页处理 | 已实跑 | 241 个对象、241 份 typed IR、241 份描述；29 个 Chart 均有独立双支，180 个来源转录、9 个仅标签资格、0 个数值关系资格 |
+| 本地检索与证据回填 | 已实跑 | 189 个合格描述、2560 维真实向量、固定 snapshot 检索与同 snapshot hydrate；金融 guard 拒绝仅转录和仅标签范围的数值问答 |
 | OpenAI 兼容来源审阅后端 | 离线测试通过 | 唯一来源审阅模型、普通 completion、SSE、错误 snapshot、未知问题和缺失证据 fail closed |
 | Open WebUI 0.6.5 兼容预览 | 已实跑 | 隔离数据目录、真实浏览器、唯一 AIA 来源模型、71 页身份、第 25 页引用与 pending 提示；不能代表 0.11.3 兼容性 |
 | Open WebUI 0.11.3 官方目标 | 仅配置 | Compose 配置可静态校验；当前机器没有可用 Docker daemon，镜像未构建、容器未启动、页面未验证 |
@@ -35,6 +37,8 @@ uv run --locked enterprise-pdf-rag ingest-aia
 - `chart-ir.status.json`、`description.status.json`：明确记录尚未生成语义产物，`artifact_id` 为 `null`。
 - `objects/sha256/` 与 `current-manifest`：内容寻址对象和当前完整快照指针。
 
+上面的两个 `*.status.json` 只描述 71 页来源 ingestion 本身，不是第 1–20 页处理结果。前 20 页的原始/修正布局、逐对象 SVG、typed IR、独立描述、原始模型响应、诊断和检索记录位于 `data/output/aia-2026-interim/pages-001-020/`；入口为 `review.html`，当前不可变处理指针为 `current-processing`。页 21–71 没有运行语义处理。
+
 这些文件位于被 Git 忽略的运行目录，不能提交到公开仓库。第 25 页 native SVG 与 PDF 渲染的底部红色基线存在粗细差异，因此 `visual_completeness` 仍为 `pending`。
 
 ## 启动 0.6.5 兼容预览
@@ -59,7 +63,7 @@ uv run --locked python scripts/webui_preview.py status
 show source document
 ```
 
-回答只列出固定 manifest 中的原文 span、1-based PDF 页码和左上角坐标系 bbox，并链接来源审阅页。`/v1/aia/review`（或 `/v1/aia/review.html`）列出 71 页；逐页地址例如 `/v1/aia/pages/page-025.html`。它明确保留 `pending` 状态，不将相邻的数值、年份或图元认定为同一 series，也不生成财务结论。 本轮已在真实 0.6.5 浏览器新会话中验证默认 AIA profile：回答识别 71 页文件与第 25 页来源，显示 pending 缺口，且没有出现合成 10/15 数据或 demo fallback。
+“查看当前文件”返回固定处理批次的实际计数和 `/v1/processing/review/review.html` 链接；“查看第25页”等页级问题仍只列出固定来源 manifest 中的原文 span、1-based PDF 页码和左上角坐标系 bbox。`/v1/aia/review`（或 `/v1/aia/review.html`）列出 71 页；逐页地址例如 `/v1/aia/pages/page-025.html`。处理 API 另提供 `/v1/processing/status`、`/v1/processing/manifest`、固定 snapshot search/context 与逐对象审阅文件。它明确区分来源观测、`pending` 推断和有限资格，不将相邻数值、年份或图元认定为同一 series，也不生成未经资格的财务结论。本轮已在真实 0.6.5 浏览器新会话中验证默认 AIA profile：回答识别 71 页文件与第 25 页来源，显示 pending 缺口，且没有出现合成 10/15 数据或 demo fallback；前 20 页处理结果另以 HTTP 与静态产物闭包验收。
 
 日志、PID 记录、SQLite、静态文件和缓存均位于 `data/open-webui-preview/`。可用以下命令查看日志：
 
@@ -90,7 +94,7 @@ uv run --locked python scripts/webui_preview.py start --profile offline-demo
 
 Open WebUI 只连接本地 API，并收到固定占位 key；启动器构造完整的子进程环境，不继承用户的云端 API key、数据库、对象存储或模型下载配置。外层 ASGI gate 在 vendor 代码之前拒绝上传、文件/knowledge、内置 retrieval、工具/function、联网搜索、其他模型、未知问题和管理配置写入。旧版 UI 的 title/tag 后台任务会在进入 vendor 前被强制关闭，未知且启用的后台任务仍被拒绝。
 
-默认 AIA 后端只暴露来源审阅模型。未知问题返回 422，其他模型返回 404，错误 snapshot 或来源证据不一致返回 409；不存在 synthetic demo、摘要或模型调用 fallback。这个边界服务于本机审阅，不提供生产鉴权、租户隔离、已验证 ChartIR 或通用问答。
+默认 AIA 后端只暴露来源审阅模型。未知问题返回 422，其他模型返回 404，错误 snapshot 或来源证据不一致返回 409；不存在 synthetic demo、摘要或模型调用 fallback。这个边界服务于本机审阅，不提供生产鉴权、租户隔离、已验证图表数值关系或通用财务问答。完整原始 ChartIR 只供审阅；仅标签资格的检索视图会清空数值、期间、轴和 marks，并由金融 guard 拒绝数值回答。
 
 ## 官方 0.11.3 目标配置
 

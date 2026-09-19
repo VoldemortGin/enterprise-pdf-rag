@@ -5,7 +5,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGES = ("enterprise_pdf_rag.figures", "enterprise_pdf_rag.documents")
+PACKAGES = (
+    "enterprise_pdf_rag.figures",
+    "enterprise_pdf_rag.documents",
+    "enterprise_pdf_rag.processing",
+)
 FORBIDDEN_STDLIB = {
     "os",
     "pathlib",
@@ -55,7 +59,7 @@ def main() -> int:
     for problem in problems:
         print(problem)
     if not problems:
-        print("Pure figures/documents architecture verified.")
+        print("Pure figures/documents/processing architecture verified.")
     return int(bool(problems))
 
 
