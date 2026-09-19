@@ -43,12 +43,24 @@ uv run --locked enterprise-pdf-rag ingest-aia
 
 ## 启动 0.6.5 兼容预览
 
-预览脚本使用项目 `.venv` 启动后端，并使用本机已有 `/opt/anaconda3` 中的 Open WebUI 0.6.5。它不会安装、更新或下载 vendor 依赖。
+预览脚本使用项目 `.venv` 启动后端，并从 `PATH` 发现已有 Python 3.12 / Open WebUI 0.6.5 解释器；也可以用 `OPEN_WEBUI_PYTHON=/path/to/environment/bin/python` 指定。只检查安装元数据，不导入 vendor 应用探测环境，不安装、更新或下载 vendor 依赖。
 
 ```sh
-uv run --locked python scripts/webui_preview.py start
+./scripts/start.sh
 uv run --locked python scripts/webui_preview.py status
 ```
+
+`start.sh` 通过脚本位置定位项目，使用绝对路径调用时不要求当前目录在仓库内。它复用 `webui_preview.py` 这套管理，要求已有前 20 页发布产物的 `current-processing`，不重跑 ingestion、embedding 或模型请求。已记录的 API/WebUI 只有在 PID 命令、工作目录、模型 profile、当前快照及 HTTP 健康检查一致时才复用；重复执行不创建新进程。脚本会打印当前快照、所有入口和可从任意目录执行的状态/停止命令。
+
+项目依赖缺失时先执行 `uv sync --locked --extra pdf`。若尚无兼容的 vendor 环境，可手动在项目私有目录准备，随后指定解释器（这不是启动脚本的自动步骤）：
+
+```sh
+uv venv --python 3.12 data/open-webui-runtime
+uv pip install --python data/open-webui-runtime/bin/python 'open-webui==0.6.5'
+OPEN_WEBUI_PYTHON="$PWD/data/open-webui-runtime/bin/python" ./scripts/start.sh
+```
+
+缺少处理数据时须先恢复已有 `data/output/aia-2026-interim/` 资产，或按 README 显式执行处理流程。没有有效数据时启动命令不会生成演示数据替代。脚本不主动 source `~/.zshrc`、不读取 `.env`，不会将上游模型凭证传给厂商进程。
 
 `status` 应显示以下两个 URL 均为 HTTP 200：
 
@@ -78,7 +90,7 @@ tail -f data/open-webui-preview/webui.log
 uv run --locked python scripts/webui_preview.py stop
 ```
 
-停止命令保留隔离数据。若 PID 记录仍存在，先运行 `status` 或再次运行 `stop`，不要直接启动第二组占用 8766/8767 的进程。
+停止命令保留隔离数据。若 PID 记录失效、服务不健康或仍固定到另一个快照，启动会明确拒绝；先查看日志并使用现有 `stop` 清理本项目记录，再运行 `start.sh`。端口由未登记进程占用时不会杀掉它，也不会尝试另起一组进程绕过。
 
 ## 显式合成回归模式
 

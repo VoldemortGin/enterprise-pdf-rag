@@ -1,6 +1,7 @@
 """Start/stop only this project's isolated, preinstalled Open WebUI preview."""
 
 import argparse
+import fcntl
 import json
 import os
 import signal
@@ -8,34 +9,225 @@ import socket
 import subprocess
 import sys
 import time
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
+from shlex import quote
+from typing import Literal
 from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
+
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / "data" / "open-webui-preview"
 PROCESS_FILE = STATE / "processes.json"
-VENDOR_PYTHON = Path("/opt/anaconda3/bin/python")
 GATE = ROOT / "src" / "enterprise_pdf_rag" / "adapters" / "http" / "webui_gate.py"
 
 
-def start(profile: str = "aia-source-review") -> None:
+class ProcessRecord(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    pid: int = Field(gt=1)
+    marker: str
+
+
+type ProcessName = Literal["api", "webui"]
+RECORDS = TypeAdapter(dict[ProcessName, ProcessRecord])
+
+
+def process_records() -> dict[ProcessName, ProcessRecord]:
+    try:
+        return RECORDS.validate_json(PROCESS_FILE.read_bytes())
+    except (OSError, ValidationError):
+        raise SystemExit(
+            f"Invalid project PID record: {PROCESS_FILE}. No processes were changed."
+        ) from None
+
+
+def process_marker(name: ProcessName) -> str:
+    return "enterprise_pdf_rag.adapters.http.app" if name == "api" else str(GATE.parent)
+
+
+def matching_process(name: ProcessName, record: ProcessRecord) -> bool:
+    check = subprocess.run(
+        ["/bin/ps", "-p", str(record.pid), "-o", "args="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if check.returncode:
+        return False
+    cwd = subprocess.run(
+        ["/usr/sbin/lsof", "-a", "-p", str(record.pid), "-d", "cwd", "-Fn"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if (
+        f"n{ROOT}" not in cwd.stdout.splitlines()
+        or record.marker != process_marker(name)
+        or record.marker not in check.stdout
+    ):
+        raise SystemExit(
+            f"PID for {name} does not match this project; no process was started or stopped."
+        )
+    return True
+
+
+def current_processing_id(*, required: bool) -> str | None:
+    pointer = ROOT / "data/output/aia-2026-interim/pages-001-020/current-processing"
+    if not pointer.is_file():
+        if required:
+            raise SystemExit(
+                f"Saved processing is missing: {pointer}. Restore the already processed data tree or follow README's processing instructions. Startup never processes PDFs or calls models."
+            )
+        return None
+    from enterprise_pdf_rag.adapters.document_store import LocalDocumentStore
+    from enterprise_pdf_rag.adapters.processing_store import ProcessingStore
+
+    try:
+        processing_id, manifest = ProcessingStore(pointer.parent).load_current()
+        source = LocalDocumentStore(pointer.parent.parent).load_current()
+        if source.manifest_id != manifest.scope.source_manifest_id:
+            raise ValueError("Source and processing pointers do not match")
+    except (OSError, ValueError):
+        raise SystemExit(
+            f"Saved current-processing is invalid or incomplete: {pointer}. Restore its matching immutable artifacts; startup will not recreate them."
+        ) from None
+    if required and (
+        manifest.scope.physical_pages != tuple(range(1, 21))
+        or manifest.retrieval is None
+    ):
+        raise SystemExit(
+            "current-processing must reference the published first-20-page processing and retrieval artifacts. See README; startup will not run ingestion or indexing."
+        )
+    return processing_id
+
+
+def preview_python() -> Path:
+    configured = os.environ.get("OPEN_WEBUI_PYTHON")
+    candidates = (
+        [Path(configured).expanduser()]
+        if configured
+        else [
+            Path(directory) / name
+            for directory in os.get_exec_path()
+            for name in ("python3.12", "python", "python3")
+        ]
+    )
+    for candidate in dict.fromkeys(candidates):
+        if not candidate.is_file() or not os.access(candidate, os.X_OK):
+            continue
+        try:
+            probe = subprocess.run(
+                [
+                    str(candidate),
+                    "-B",
+                    "-I",
+                    "-c",
+                    "import sys; from importlib.metadata import version; sys.exit(0 if sys.version_info[:2] == (3, 12) and version('open-webui') == '0.6.5' else 1)",
+                ],
+                env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.returncode == 0:
+            return candidate.absolute()
+    raise SystemExit(
+        "No preinstalled Python 3.12 / Open WebUI 0.6.5 runtime found. Set OPEN_WEBUI_PYTHON=/path/to/that/environment/bin/python and rerun scripts/start.sh. See docs/open-webui.md for isolated setup or the pinned Compose option; startup never installs vendor dependencies."
+    )
+
+
+def ready(profile: str, processing_id: str | None) -> bool:
+    from enterprise_pdf_rag.adapters.http.openai_schemas import DEMO_MODEL, ModelList
+    from enterprise_pdf_rag.adapters.http.processing_schemas import (
+        ProcessingStatusResponse,
+    )
+    from enterprise_pdf_rag.adapters.http.webui_gate import AIA_REVIEW_MODEL
+
+    opener = build_opener(ProxyHandler({}))
+    try:
+        with opener.open("http://127.0.0.1:8766/v1/models", timeout=3) as response:
+            models = ModelList.model_validate_json(response.read(65536))
+        expected = AIA_REVIEW_MODEL if profile == "aia-source-review" else DEMO_MODEL
+        if tuple(item.id for item in models.data) != (expected,):
+            return False
+        with opener.open("http://127.0.0.1:8767/api/config", timeout=3) as response:
+            if response.status != 200:
+                return False
+        if processing_id is not None:
+            with opener.open(
+                "http://127.0.0.1:8766/v1/processing/status", timeout=30
+            ) as response:
+                saved = ProcessingStatusResponse.model_validate_json(
+                    response.read(65536)
+                )
+            if saved.processing_id != processing_id:
+                return False
+    except (OSError, URLError, ValidationError):
+        return False
+    return True
+
+
+def show_links(processing_id: str | None, profile: str = "aia-source-review") -> None:
+    print("Open WebUI 0.6.5 compatibility preview: http://127.0.0.1:8767")
+    print("API: http://127.0.0.1:8766")
+    if processing_id is not None:
+        print(
+            "First-20-page review: http://127.0.0.1:8766/v1/processing/review/review.html"
+        )
+        print(f"Saved processing: {processing_id}")
+    print(f"Logs and PID record: {STATE}")
+    command = f"uv run --directory {quote(str(ROOT))} --locked python scripts/webui_preview.py"
+    option = " --profile offline-demo" if profile == "offline-demo" else ""
+    print(f"Status: {command} status{option}")
+    print(f"Stop: {command} stop")
+
+
+def start(
+    profile: str = "aia-source-review", *, require_processing: bool = False
+) -> None:
+    processing_id = (
+        current_processing_id(required=require_processing)
+        if profile == "aia-source-review"
+        else None
+    )
     if PROCESS_FILE.exists():
+        records = process_records()
+        if set(records) != {"api", "webui"} or not all(
+            matching_process(name, record) for name, record in records.items()
+        ):
+            raise SystemExit(
+                "The project process record is stale or incomplete. Run the existing stop command, then scripts/start.sh; no automatic cleanup was attempted."
+            )
+        if ready(profile, processing_id):
+            print("Reusing the existing project API and Open WebUI; no new processes.")
+            show_links(processing_id, profile)
+            return
         raise SystemExit(
-            "Preview process record already exists; run the stop command first."
+            "Recorded project services are unhealthy or serve a different profile/current-processing. Inspect status/logs, then run the existing stop command before scripts/start.sh; no processes were changed."
         )
-    if not VENDOR_PYTHON.is_file():
+    if not (ROOT / ".venv/bin/python").is_file():
         raise SystemExit(
-            "The explicit preinstalled 0.6.5 preview runtime is unavailable. Use Compose."
+            "Project Python environment is missing. Run: uv sync --locked --extra pdf"
         )
+    vendor_python = preview_python()
     for port in (8766, 8767):
         with socket.socket() as listener:
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            listener.bind(("127.0.0.1", port))
+            try:
+                listener.bind(("127.0.0.1", port))
+            except OSError:
+                raise SystemExit(
+                    f"Loopback port {port} is occupied without a reusable project record. No process was stopped; inspect the port owner before retrying."
+                ) from None
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    processes: dict[str, dict[str, str | int]] = {}
-    commands = {
+    processes: dict[ProcessName, dict[str, str | int]] = {}
+    commands: dict[ProcessName, list[str]] = {
         "api": [
             str(ROOT / ".venv" / "bin" / "python"),
             "-m",
@@ -48,7 +240,7 @@ def start(profile: str = "aia-source-review") -> None:
             "8766",
         ],
         "webui": [
-            str(VENDOR_PYTHON),
+            str(vendor_python),
             str(GATE),
             "--preview-legacy",
             "--profile",
@@ -77,50 +269,32 @@ def start(profile: str = "aia-source-review") -> None:
             )
         processes[name] = {
             "pid": process.pid,
-            "marker": "enterprise_pdf_rag.adapters.http.app"
-            if name == "api"
-            else str(GATE.parent),
+            "marker": process_marker(name),
         }
-    PROCESS_FILE.write_text(json.dumps(processes, indent=2) + "\n")
-    PROCESS_FILE.chmod(0o600)
-    print("Started local processes; readiness must be checked in the logs.")
-    print(
-        "Open WebUI 0.6.5 compatibility preview: http://127.0.0.1:8767\nAPI: http://127.0.0.1:8766"
+        PROCESS_FILE.write_text(json.dumps(processes, indent=2) + "\n")
+        PROCESS_FILE.chmod(0o600)
+    deadline = time.monotonic() + 60.0
+    while time.monotonic() < deadline:
+        if ready(profile, processing_id):
+            print("Project API and Open WebUI are ready.")
+            show_links(processing_id, profile)
+            return
+        time.sleep(1)
+    raise SystemExit(
+        f"Project processes started but readiness failed. Inspect {STATE}/api.log and webui.log; the PID record is retained for the existing status/stop commands."
     )
-    print(f"Logs and PID record: {STATE}")
-    print("Stop: uv run --locked python scripts/webui_preview.py stop")
 
 
 def stop() -> None:
     if not PROCESS_FILE.exists():
         print("No project preview process record exists.")
         return
-    processes: dict[str, dict[str, str | int]] = json.loads(PROCESS_FILE.read_text())
+    processes = process_records()
     live: list[int] = []
     for name, record in processes.items():
-        pid = int(record["pid"])
-        check = subprocess.run(
-            ["/bin/ps", "-p", str(pid), "-o", "args="],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if check.returncode:
+        if not matching_process(name, record):
             continue
-        cwd = subprocess.run(
-            ["/usr/sbin/lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if (
-            f"n{ROOT}" not in cwd.stdout.splitlines()
-            or str(record["marker"]) not in check.stdout
-        ):
-            raise SystemExit(
-                f"PID for {name} no longer matches this project; refusing to stop it."
-            )
-        live.append(pid)
+        live.append(record.pid)
     for pid in live:
         with suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
@@ -147,22 +321,43 @@ def _running(pid: int) -> bool:
     return result.returncode == 0 and not result.stdout.strip().startswith("Z")
 
 
-def status() -> int:
-    opener = build_opener(ProxyHandler({}))
-    ready = True
-    for name, url in (
-        ("api", "http://127.0.0.1:8766/v1/models"),
-        ("webui", "http://127.0.0.1:8767/api/config"),
+def status(profile: str = "aia-source-review") -> int:
+    if not PROCESS_FILE.is_file():
+        print(
+            "No project process record exists; other listeners are not project health."
+        )
+        return 1
+    records = process_records()
+    if set(records) != {"api", "webui"} or not all(
+        matching_process(name, record) for name, record in records.items()
     ):
+        print(f"Project process record is stale or incomplete: {PROCESS_FILE}")
+        return 1
+    processing_id = (
+        current_processing_id(required=True) if profile == "aia-source-review" else None
+    )
+    if not ready(profile, processing_id):
+        print(f"Project HTTP/profile/current-processing check failed. Logs: {STATE}")
+        return 1
+    print("Project API and Open WebUI: HTTP 200; PID ownership/profile/snapshot match.")
+    show_links(processing_id, profile)
+    return 0
+
+
+@contextmanager
+def management_lock() -> Iterator[None]:
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (STATE / "management.lock").open("a") as lock:
         try:
-            with opener.open(url, timeout=3) as response:
-                code = response.status
-        except (OSError, URLError):
-            code = 0
-        print(f"{name}: HTTP {code} — {url}")
-        ready = ready and code == 200
-    print(f"PID record: {PROCESS_FILE}")
-    return 0 if ready else 1
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit(
+                "Another project start/stop is in progress. Retry shortly; no processes were changed."
+            ) from None
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def main() -> int:
@@ -173,13 +368,19 @@ def main() -> int:
         choices=("aia-source-review", "offline-demo"),
         default="aia-source-review",
     )
+    parser.add_argument(
+        "--require-processing",
+        action="store_true",
+        help="Require an existing published first-20-page processing snapshot",
+    )
     args = parser.parse_args()
-    if args.action == "start":
-        start(args.profile)
-    elif args.action == "stop":
-        stop()
-    else:
-        return status()
+    if args.action == "status":
+        return status(args.profile)
+    with management_lock():
+        if args.action == "start":
+            start(args.profile, require_processing=args.require_processing)
+        else:
+            stop()
     return 0
 
 

@@ -71,11 +71,13 @@ uv run --locked enterprise-pdf-rag index-aia-processing \
 本机已有 Open WebUI **0.6.5** 时，可启动隔离兼容预览：
 
 ```sh
-uv run --locked python scripts/webui_preview.py start
+./scripts/start.sh
 uv run --locked python scripts/webui_preview.py status
 # 停止本项目的两个进程，保留数据
 uv run --locked python scripts/webui_preview.py stop
 ```
+
+`start.sh` 可通过其绝对路径从任意目录执行。它读取现有 `current-processing`，要求已发布的前 20 页产物；复用属于本项目且服务同一快照的健康进程，打印界面、审阅、日志和停止方式。缺依赖或数据时明确退出，不安装依赖、不处理 PDF、不调用模型。先用 `uv sync --locked --extra pdf` 准备项目环境；Open WebUI 解释器从 `PATH` 中发现，或用 `OPEN_WEBUI_PYTHON=/path/to/environment/bin/python ./scripts/start.sh` 明确指定已有 Python 3.12 / Open WebUI 0.6.5 环境。脚本不读取个人 shell 配置或 `.env`，厂商进程仍使用隔离白名单环境。
 
 打开 [Open WebUI](http://127.0.0.1:8767)，选择 `AIA 2026 中期业绩 — 原文审阅 / 语义待验证`，输入 `查看当前文件` 或 `查看第25页`。API 在 `127.0.0.1:8766`；[来源浏览](http://127.0.0.1:8766/v1/aia/review) 提供原始资产与逐页入口。回答固定到已保存的 manifest，不调用模型、不使用合成数值回退。已有处理批次时，`查看当前文件` 显示实际处理统计并链接前 20 页产物；71 页来源浏览仍独立保留。
 
